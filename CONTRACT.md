@@ -13,16 +13,24 @@ DOSDev opens a file at a line with `DE +LINE FILE`, for F4 and for the
 errors a build lists. `DE /SPEED FILE` times the editor and is not used by
 DOSDev.
 
+    DE /CHECK FILE
+
+`DE /CHECK FILE` is for a build to prove that the DE.EXE it made starts. It
+needs no keyboard. DE sets the screen up as at a normal start, puts it back,
+writes `DE 0.6 ok` and a line feed (not a carriage return) in FILE, and
+ends with exit code 0. If it cannot start, or cannot write FILE, it says why
+on the error output and ends with exit code 1. The number is DE's version.
+
 ## Environment
 
 DOSDev sets these in every DOSBox-X start:
 
 - `DOSDEV_PALETTE`: 96 hex digits, the red, green and blue bytes of the 16
-  text colours. DE 0.5 reads it when Options > Colours is Follow DOSDev. DE
+  text colours. DE 0.5 and later read it when Options > Colours is Follow DOSDev. DE
   sets the colours through the VGA BIOS, and puts back the ones it found
   when it ends and while a program it runs has the screen. A value that is
   missing, or is not 96 hex digits, is not used.
-- `DOSDEV_THEME`: the name of DOSDev's theme. DE 0.5 does not read it.
+- `DOSDEV_THEME`: the name of DOSDev's theme. DE does not read it.
 
 DE also reads `INCLUDE` and `DJDIR` to find headers for F12 on an
 `#include` line.

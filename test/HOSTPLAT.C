@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include "DE.H"
@@ -58,6 +59,15 @@ void plat_fullpath(const char *in, char *out)
             d[0] = 0;
         snprintf(out, DE_PATH, "%.200s/%.50s", d, in);
     }
+}
+
+int plat_mtime(const char *path, long *out)
+{
+    struct stat st;
+    if (stat(path, &st))
+        return -1;
+    *out = (long)st.st_mtime;
+    return 0;
 }
 
 int plat_init(void) { return 0; }

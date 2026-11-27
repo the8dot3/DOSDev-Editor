@@ -427,13 +427,19 @@ static int entry_cmp(const void *a, const void *b)
     return tolower((unsigned char)*p) - tolower((unsigned char)*q);
 }
 
+/* dir and name as one path, cut off where DE_PATH ends. */
 static void join(const char *dir, const char *name, char *out)
 {
-    size_t n = strlen(dir);
-    if (n && (dir[n - 1] == '/' || dir[n - 1] == '\\'))
-        snprintf(out, DE_PATH, "%s%s", dir, name);
-    else
-        snprintf(out, DE_PATH, "%s/%s", dir, name);
+    size_t n = strlen(dir), m = strlen(name);
+    if (n > DE_PATH - 1)
+        n = DE_PATH - 1;
+    memcpy(out, dir, n);
+    if (n < DE_PATH - 1 && (!n || (dir[n - 1] != '/' && dir[n - 1] != '\\')))
+        out[n++] = '/';
+    if (m > DE_PATH - 1 - n)
+        m = DE_PATH - 1 - n;
+    memcpy(out + n, name, m);
+    out[n + m] = 0;
 }
 
 static int is_dir(const char *p)

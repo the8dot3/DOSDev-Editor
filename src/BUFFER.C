@@ -6,14 +6,37 @@
 #include <string.h>
 #include "DE.H"
 
+/* Memory has run out and the text being edited is not safe: it is written
+ * out as NAME.SAV files first. A little memory is kept back for that. */
+static void *spare;
+
+static void out_of_memory(void)
+{
+    static int busy;
+    free(spare);
+    spare = NULL;
+    plat_done();
+    if (!busy) {
+        busy = 1;
+        ed_emergency_save();
+    }
+    fputs("DE: out of memory\n", stderr);
+    exit(3);
+}
+
+#ifdef DE_TEST
+int de_fail_alloc;             /* the tests: fail the Nth xrealloc from now (1: the next) */
+#endif
+
 void *xrealloc(void *p, size_t n)
 {
     void *q = realloc(p, n ? n : 1);
-    if (!q) {
-        plat_done();
-        fputs("DE: out of memory\n", stderr);
-        exit(3);
-    }
+#ifdef DE_TEST
+    if (de_fail_alloc && --de_fail_alloc == 0)
+        q = NULL;
+#endif
+    if (!q)
+        out_of_memory();
     return q;
 }
 
@@ -95,6 +118,8 @@ static void touched(Buffer *b, int l, int moved)
 Buffer *buf_new(void)
 {
     Buffer *b = xrealloc(NULL, sizeof *b);
+    if (!spare)
+        spare = malloc(32 * 1024);
     memset(b, 0, sizeof *b);
     lines_reserve(b, 1);
     line_set(&b->ln[0], "", 0);
@@ -378,6 +403,17 @@ int buf_modified(const Buffer *b)
     return b->upos != b->saved;
 }
 
+/* Has the file been written since this buffer read or wrote it? A file
+ * that has gone, or that can't be told about, is not "changed": there is
+ * nothing to lose by saving over it. */
+int buf_changed_on_disk(const Buffer *b)
+{
+    long t;
+    if (!b->path[0] || plat_mtime(b->path, &t))
+        return 0;
+    return t != b->disk_time;
+}
+
 /* For the tests: is everything as it should be? */
 int buf_check(const Buffer *b)
 {
@@ -461,19 +497,31 @@ int buf_state_check(Buffer *b)
 int buf_load(Buffer *b, const char *path)
 {
     FILE *f;
-    long size;
+    long size, when = 0;
     char *data;
     int i, nlines, start, crlfs = 0, lfs = 0;
 
-    strncpy(b->path, path, DE_PATH - 1);
-    b->path[DE_PATH - 1] = 0;
+    if (path != b->path) {      /* (a buffer read again passes its own name) */
+        strncpy(b->path, path, DE_PATH - 1);
+        b->path[DE_PATH - 1] = 0;
+    }
     b->lang = lang_of(path);
+    if (plat_mtime(path, &when))
+        when = 0;               /* taken before reading: a change while reading shows up later */
     f = fopen(path, "rb");
-    if (!f)
-        return errno == ENOENT ? 1 : -1;
+    if (!f) {
+        if (errno != ENOENT)
+            return -1;
+        b->disk_time = 0;
+        return 1;
+    }
     if (fseek(f, 0, SEEK_END) || (size = ftell(f)) < 0 || fseek(f, 0, SEEK_SET)) {
         fclose(f);
         return -1;
+    }
+    if (size > DE_MAX_FILE) {   /* too big to hold: the buffer is as it was */
+        fclose(f);
+        return -2;
     }
     data = xrealloc(NULL, size + 1);
     if (size > 0 && fread(data, 1, size, f) != (size_t)size) {
@@ -517,6 +565,11 @@ int buf_load(Buffer *b, const char *path)
     b->hvalid = 1;
     b->hknown = b->hdirty = 0;
     b->cy = b->cx = b->top = b->left = b->want = 0;
+    b->sel = 0;
+    for (i = 0; i < b->nch; i++)        /* a buffer read again starts its history again */
+        free(b->ch[i].text);
+    b->nch = b->upos = b->saved = 0;
+    b->disk_time = when;
     return 0;
 }
 
@@ -537,20 +590,20 @@ static void temp_name(const char *path, char *out)
     strcpy(out + n, ".$$$");
 }
 
-int buf_save(Buffer *b, const char *path)
+/* Writes the lines to a file: 1 if all of it went. Lines that were left
+ * without text (memory ran out) write as empty. */
+static int write_lines(const Buffer *b, const char *name)
 {
-    char tmp[DE_PATH];
-    FILE *f;
+    FILE *f = fopen(name, "wb");
     int i, ok = 1;
     const char *eol = b->crlf ? "\r\n" : "\n";
 
-    temp_name(path, tmp);
-    f = fopen(tmp, "wb");
     if (!f)
-        return -1;
+        return 0;
     if (!(b->n == 1 && b->ln[0].len == 0)) {
         for (i = 0; i < b->n && ok; i++) {
-            if (fwrite(b->ln[i].s, 1, b->ln[i].len, f) != (size_t)b->ln[i].len)
+            int len = b->ln[i].s ? b->ln[i].len : 0;
+            if (fwrite(b->ln[i].s, 1, len, f) != (size_t)len)
                 ok = 0;
             if (i < b->n - 1 || b->final_nl)
                 if (fputs(eol, f) < 0)
@@ -563,10 +616,20 @@ int buf_save(Buffer *b, const char *path)
         ok = 0;
     if (fclose(f))
         ok = 0;
-    if (!ok) {
-        remove(tmp);
+    if (!ok)
+        remove(name);
+    return ok;
+}
+
+int buf_save(Buffer *b, const char *path)
+{
+    char tmp[DE_PATH];
+    FILE *f;
+    long t;
+
+    temp_name(path, tmp);
+    if (!write_lines(b, tmp))
         return -1;
-    }
     remove(path);                 /* DOS won't rename over a file */
     if (rename(tmp, path)) {
         f = fopen(path, "rb");
@@ -586,7 +649,30 @@ int buf_save(Buffer *b, const char *path)
         if (b->words)
             words_build(b);      /* made again if the language changed */
     }
+    b->disk_time = plat_mtime(b->path, &t) ? 0 : t;
     b->saved = b->upos;
     b->isnew = 0;
     return 0;
+}
+
+/* Out of memory: the text goes to NAME.SAV (the file's name with .SAV), or
+ * UNTITLnn.SAV for a file with no name, nn being its place in the list. */
+int buf_emergency(const Buffer *b, int index, char *name)
+{
+    const char *dot = strrchr(b->path, '.');
+    const char *sep = strrchr(b->path, '/');
+    const char *sep2 = strrchr(b->path, '\\');
+    size_t n;
+    if (!b->path[0]) {
+        sprintf(name, "UNTITL%02d.SAV", index % 100);
+    } else {
+        if (sep2 > sep)
+            sep = sep2;
+        n = dot && (!sep || dot > sep) ? (size_t)(dot - b->path) : strlen(b->path);
+        if (n > DE_PATH - 5)
+            n = DE_PATH - 5;
+        memcpy(name, b->path, n);
+        strcpy(name + n, ".SAV");
+    }
+    return write_lines(b, name) ? 0 : -1;
 }

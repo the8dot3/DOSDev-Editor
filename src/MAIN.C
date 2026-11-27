@@ -21,6 +21,28 @@ static void find_config(const char *argv0)
 
 #endif
 
+/* DE /CHECK FILE: start as DE does (the screen set up, the colours loaded),
+ * stop (all put back), and say so in FILE. It needs no keyboard: another
+ * project's build runs it to see that the DE.EXE it made starts. */
+int de_check(const char *file)
+{
+    FILE *f;
+    if (plat_init()) {
+        fputs("DE needs a text screen of at least 80 columns and 25 rows.\n", stderr);
+        return 1;
+    }
+    scr_init();
+    theme_set(0);
+    theme_done();
+    plat_done();
+    f = fopen(file, "wb");           /* "\n" only, whatever the platform */
+    if (!f || fprintf(f, "DE " DE_VERSION " ok\n") < 0 || fclose(f)) {
+        fprintf(stderr, "DE: can't write %s\n", file);
+        return 1;
+    }
+    return 0;
+}
+
 int config_load(void)
 {
     FILE *f = fopen(cfg_path, "r");
@@ -78,6 +100,7 @@ static void usage(void)
          "  DE [FILE ...]        Open files; a name that doesn't exist yet starts a new file\n"
          "  DE +LINE FILE        Open FILE at a line (FILE +LINE works too)\n"
          "  DE /SPEED FILE       Time DE on FILE: how long each kind of key takes here\n"
+         "  DE /CHECK FILE       Start and stop without a keyboard; write \"DE n ok\" in FILE\n"
          "\n"
          "Inside DE, F1 lists every key and F10 opens the menus.");
 }
@@ -128,6 +151,13 @@ int main(int argc, char **argv)
     if (argc > 1 && is_opt(argv[1], "speed") && argc != 3) {
         usage();
         return 1;
+    }
+    if (argc > 1 && is_opt(argv[1], "check")) {
+        if (argc != 3) {
+            usage();
+            return 1;
+        }
+        return de_check(argv[2]);
     }
     if (plat_init()) {
         fputs("DE needs a text screen of at least 80 columns and 25 rows.\n", stderr);

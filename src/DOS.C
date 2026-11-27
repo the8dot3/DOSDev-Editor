@@ -492,6 +492,15 @@ void plat_user_screen(void)
     take_screen();
 }
 
+int plat_mtime(const char *path, long *out)
+{
+    struct stat st;
+    if (stat(path, &st))
+        return -1;
+    *out = (long)st.st_mtime;
+    return 0;
+}
+
 void plat_fullpath(const char *in, char *out)
 {
     _fixpath(in, out);

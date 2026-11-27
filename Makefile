@@ -16,14 +16,19 @@ SRC    = $(addprefix src/,MAIN.C EDITOR.C SUGGEST.C PROJECT.C SYMBOLS.C HELP.C R
 
 all: $(OUT)/DE.EXE
 
-$(OUT)/DE.EXE: $(SRC) src/DE.H src/MANUAL.H
+$(OUT)/DE.EXE: $(SRC) src/DE.H $(OUT)/MANUAL.H
 > mkdir -p $(OUT)
+> cmp -s $(OUT)/MANUAL.H src/MANUAL.H || cp $(OUT)/MANUAL.H src/MANUAL.H
 > $(CC) $(CFLAGS) -o $@ -x c $(SRC)
 
 # The manual inside DE (F1) is DE.TXT, as C strings. src/MANUAL.H is kept
-# in the repository, so BUILD.BAT, in DOS, has it too.
-src/MANUAL.H: DE.TXT
-> awk 'BEGIN { print "/* Made from DE.TXT by make: change DE.TXT, not this. */"; print "static const char *const MANUAL[] = {" } { gsub(/\r/, ""); gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); print "    \"" $$0 "\"," } END { print "    0"; print "};" }' DE.TXT > src/MANUAL.H
+# in the repository, so BUILD.BAT, in DOS, has it too. It is made in OUT
+# and copied over src/MANUAL.H only when its content differs, so building
+# from a source folder that can't be written (or whose files have any
+# times at all) never touches it.
+$(OUT)/MANUAL.H: DE.TXT
+> mkdir -p $(OUT)
+> awk 'BEGIN { print "/* Made from DE.TXT by make: change DE.TXT, not this. */"; print "static const char *const MANUAL[] = {" } { gsub(/\r/, ""); gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); print "    \"" $$0 "\"," } END { print "    0"; print "};" }' DE.TXT > $@
 
 test:
 > sh test/run.sh
@@ -49,6 +54,6 @@ $(OUT)/DE.ZIP: $(OUT)/DE.EXE DE.LSM DE.TXT
 
 clean:
 > rm -rf $(OUT)
-# src/MANUAL.H stays: BUILD.BAT needs it, and DE.TXT makes it again when it changes.
+# src/MANUAL.H stays: BUILD.BAT needs it, and the build makes it again when DE.TXT changes.
 
 .PHONY: all test package clean

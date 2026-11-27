@@ -1,7 +1,25 @@
 # Changelog
 
-## Unreleased
+## 0.6
 
+- DE no longer saves over a file another program changed. Saving asks when
+  the file changed on disk since DE read or saved it: Reload, or Keep mine.
+- When DE comes back from running a program or a build, it looks at every
+  open file. A file with no unsaved changes that changed on disk is read
+  again; one with unsaved changes asks.
+- Tab in a Makefile (`Makefile`, `*.MAK`, `*.MK`) types a tab character,
+  whatever Options > Tab key inserts says.
+- DE opens files up to 16 MB. A larger file is refused with a message.
+- If memory runs out, DE writes each file with unsaved changes as
+  `NAME.SAV` before it ends, and says so. A file with no name is written as
+  `UNTITLnn.SAV`.
+- `DE /CHECK FILE` starts DE and stops it with no keyboard, writes
+  `DE 0.6 ok` in FILE and ends with exit code 0. A build can use it to see
+  that DE.EXE starts.
+- `BUILD.BAT` now makes `BUILD\DE.EXE`, where the Linux build puts it.
+- The build has no warnings with GCC 12.2 and `-Wall`.
+- `make OUT=FOLDER` does not write into the source folder when
+  `src/MANUAL.H` already has the content `DE.TXT` gives.
 - DE has its own repository. The sources are in `src/`, the tests in `test/`.
 - `make` builds into the folder named by `OUT` (`build` by default), and has
   `test` and `package` targets.

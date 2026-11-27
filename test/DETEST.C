@@ -7,7 +7,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#include <utime.h>
+#if defined(__SANITIZE_ADDRESS__)
+#include <sanitizer/lsan_interface.h>
+#endif
 #include "DE.H"
 
 extern int t_keys[], t_nkeys, t_kpos, t_shift, t_rows, t_cols, t_crow, t_ccol, t_cursor, t_extra;
@@ -16,6 +21,7 @@ extern int t_snapped, t_batch, t_shows, t_repeat, t_execs, t_user_screens;
 extern char t_last_exec[];
 extern int t_pal_calls, t_pal_set, t_pal_restores;
 extern unsigned char t_pal[48];
+extern int de_fail_alloc;
 
 static int passes, fails;
 static char dir[512];
@@ -918,7 +924,7 @@ static void test_libraries(void)
     keys(1, DK_F1);
     run();
     CHECK("the manual's contents fit one screen", t_snapped && snap_has("Getting started") && snap_has("How DE works"));
-    CHECK("...and it says it's 0.5", t_snapped && snap_has("Version 0.5"));
+    CHECK("...and it says it's 0.6", t_snapped && snap_has("Version 0.6"));
 }
 
 /* Keys that come faster than the screen can be drawn, the word index, the
@@ -1134,7 +1140,7 @@ static void test_theme(void)
     char line[200];
     int saved = 0;
     puts("Colours that follow DOSDev");
-    CHECK("DE 0.5", !strcmp(DE_VERSION, "0.5"));
+    CHECK("DE 0.6", !strcmp(DE_VERSION, "0.6"));
     CHECK("five themes", NTHEMES == 5 && !strcmp(theme_name[0], "Follow DOSDev") && !strcmp(theme_name[1], "Borland blue")
           && !strcmp(theme_name[2], "Midnight") && !strcmp(theme_name[3], "Paper") && !strcmp(theme_name[4], "Solar"));
 
@@ -1215,6 +1221,239 @@ static void test_theme(void)
     remove(cfg_path);
 }
 
+/* ---- work that must not be lost ------------------------------------------ */
+
+static void set_mtime(const char *name, long t)
+{
+    struct utimbuf u;
+    u.actime = u.modtime = (time_t)t;
+    utime(path(name), &u);
+}
+
+static long mtime_now(const char *name)
+{
+    struct stat st;
+    return stat(path(name), &st) ? -1 : (long)st.st_mtime;
+}
+
+/* Keys to open a file and run to the end of them: what's on the screen
+ * is what a dialog left when they ran out. */
+static void test_disk_changes(void)
+{
+    Buffer *b;
+    Project pr;
+    puts("A file that changed on disk");
+    write_file("CH.TXT", "one\n", -1);
+    set_mtime("CH.TXT", 1000000000L);
+    fresh();
+    ed_open(path("CH.TXT"), 0);
+    b = files[cur];
+    CHECK("a file read is not changed on disk", !buf_changed_on_disk(b) && b->disk_time == 1000000000L);
+    keys(2, 'X', DK_F2);
+    run();
+    CHECK("an unchanged file: saving never asks", !t_snapped && file_is("CH.TXT", "Xone\n", -1) && strstr(row_text(24), "Saved CH.TXT"));
+    CHECK("...and saving takes the new time as its own", !buf_changed_on_disk(b));
+
+    write_file("CH.TXT", "two\n", -1);
+    set_mtime("CH.TXT", 1000000500L);
+    CHECK("a file written by another program is changed on disk", buf_changed_on_disk(b));
+    keys(2, 'Y', DK_F2);
+    run();
+    CHECK("saving asks", t_snapped && snap_has("changed on disk") && snap_has("Reload") && snap_has("Keep mine"));
+    CHECK("...and writes nothing until it is answered", file_is("CH.TXT", "two\n", -1));
+    keys(3, 'Z', DK_F2, 'K');
+    run();
+    CHECK("Keep mine writes the buffer", file_is("CH.TXT", "XYZone\n", -1) && !buf_modified(b));
+    write_file("CH.TXT", "three\n", -1);
+    set_mtime("CH.TXT", 1000000900L);
+    keys(3, 'Q', DK_F2, DK_ESC);
+    run();
+    CHECK("Esc leaves the file as it is, and the buffer too", file_is("CH.TXT", "three\n", -1) && buf_modified(b));
+    keys(2, DK_F2, 'R');
+    run();
+    CHECK("Reload replaces the buffer with the file", text_is("three") && !buf_modified(b) && !buf_changed_on_disk(b));
+    CHECK("...and says so", strstr(row_text(24), "Reloaded CH.TXT"));
+    keys(3, KM_CTRL | 'Z', KM_CTRL | 'Z', DK_F2);
+    run();
+    CHECK("...undo does not reach back past the reload", text_is("three") && !t_snapped);
+
+    /* Returning from a run. The run writes the file, then gives it a time. */
+    mkdir(path("RUNP"), 0777);
+    write_file("RUNP/RUNF.TXT", "old\n", -1);
+    set_mtime("RUNP/RUNF.TXT", 1000000000L);
+    write_file("RUNP/project.ini", "[project]\nbuild_on = dos\nrun = printf 'fresh\\n' > RUNF.TXT; touch -d @1000000100 RUNF.TXT\n", -1);
+    fresh();
+    ed_open(path("RUNP/RUNF.TXT"), 0);
+    b = files[cur];
+    proj_find(b, &pr);
+    keys(1, KM_CTRL | DK_F9);
+    run();
+    CHECK("returning from a run: an unchanged buffer is reloaded", !t_snapped && text_is("fresh") && !buf_modified(b));
+    CHECK("...with a line to say so", strstr(row_text(24), "RUNF.TXT changed on disk"));
+    keys(1, 'm');
+    run();
+    write_file("RUNP/project.ini", "[project]\nbuild_on = dos\nrun = printf 'again\\n' > RUNF.TXT; touch -d @1000000200 RUNF.TXT\n", -1);
+    keys(1, KM_CTRL | DK_F9);
+    run();
+    CHECK("...a buffer with changes asks", t_snapped && snap_has("RUNF.TXT") && snap_has("Reload") && snap_has("Keep mine"));
+    CHECK("...Esc keeps the buffer as it is", text_is("mfresh") && buf_modified(b));
+    write_file("RUNP/project.ini", "[project]\nbuild_on = dos\nrun = printf 'again\\n' > RUNF.TXT; touch -d @1000000250 RUNF.TXT\n", -1);
+    keys(2, KM_CTRL | DK_F9, 'K');
+    run();
+    CHECK("...so does Keep mine", !t_snapped && text_is("mfresh") && buf_modified(b));
+    keys(1, KM_CTRL | DK_F9);
+    run();
+    CHECK("...and it is not asked again for the same change", !t_snapped && text_is("mfresh"));
+    write_file("RUNP/project.ini", "[project]\nbuild_on = dos\nrun = printf 'last\\n' > RUNF.TXT; touch -d @1000000300 RUNF.TXT\n", -1);
+    keys(2, KM_CTRL | DK_F9, 'R');
+    run();
+    CHECK("...Reload takes the file", text_is("last") && !buf_modified(b));
+    keys(1, KM_CTRL | DK_F9);
+    run();
+    CHECK("a run that changes nothing asks nothing", !t_snapped && text_is("last") && !strstr(row_text(24), "changed on disk"));
+    CHECK("a file that is not there is not changed on disk", mtime_now("RUNP/NOPE.TXT") < 0);
+}
+
+static void test_make_tabs(void)
+{
+    puts("Tab in a Makefile");
+    opt_spaces = 1;
+    fresh();
+    ed_open(path("Makefile"), 0);
+    keys(1, DK_TAB);
+    run();
+    CHECK("Makefile: Tab inserts a tab character, as Make needs", text_is("\t"));
+    fresh();
+    ed_open(path("PROG.MAK"), 0);
+    keys(2, DK_TAB, 'x');
+    run();
+    CHECK("*.MAK too", text_is("\tx"));
+    fresh();
+    ed_open(path("MAIN.C"), 0);
+    keys(1, DK_TAB);
+    run();
+    CHECK("MAIN.C: Tab follows the option (spaces)", text_is("    "));
+    fresh();
+    opt_spaces = 0;
+    ed_open(path("MAIN.C"), 0);
+    keys(1, DK_TAB);
+    run();
+    CHECK("...and (tabs)", text_is("\t"));
+    opt_spaces = 1;
+}
+
+static void test_big_and_memory(void)
+{
+    FILE *f;
+    int r, n;
+    pid_t pid;
+    int st;
+    char *t;
+    puts("Memory and big files");
+    f = fopen(path("BIG.TXT"), "wb");
+    fseek(f, DE_MAX_FILE, SEEK_SET);
+    fputc('x', f);
+    fclose(f);
+    fresh();
+    ed_open(path("CH.TXT"), 0);
+    keys(1, 'k');
+    run();
+    n = nfiles;
+    r = ed_open(path("BIG.TXT"), 0);
+    CHECK("a file over the limit is refused", r == -1 && nfiles == n);
+    ed_draw();
+    CHECK("...with a message that says why", strstr(row_text(24), "larger than 16 MB"));
+    CHECK("...and what was open is as it was", buf_modified(files[cur]) && strstr(files[cur]->path, "CH.TXT"));
+    f = fopen(path("BIG.TXT"), "wb");
+    fseek(f, DE_MAX_FILE - 1, SEEK_SET);
+    fputc('\n', f);
+    fclose(f);
+    CHECK("a file at the limit is opened", ed_open(path("BIG.TXT"), 0) == 0);
+    remove(path("BIG.TXT"));
+
+    write_file("KEEP.TXT", "kept\n", -1);
+    remove(path("WORK.SAV"));
+    remove(path("KEEP.SAV"));
+    remove(path("UNTITL02.SAV"));
+    fflush(stdout);
+    pid = fork();
+    if (pid == 0) {
+        int i;
+#if defined(__SANITIZE_ADDRESS__)
+        __lsan_disable();
+#endif
+        if (chdir(dir))              /* a file with no name is saved where DE is */
+            _exit(78);
+        fresh();
+        ed_open(path("KEEP.TXT"), 0);
+        ed_open(path("WORK.TXT"), 0);
+        freopen(path("OOM.ERR"), "w", stderr);
+        type("hello world");
+        run();
+        ed_new();
+        type("no name yet");
+        run();
+        de_fail_alloc = 1;
+        for (i = 0; i < 100; i++)
+            key('a');
+        run();
+        _exit(77);              /* DE should have ended itself */
+    }
+    waitpid(pid, &st, 0);
+    CHECK("memory ran out: DE ends with exit code 3", WIFEXITED(st) && WEXITSTATUS(st) == 3);
+    t = NULL;
+    f = fopen(path("WORK.SAV"), "rb");
+    if (f) {
+        char buf[300];
+        size_t k = fread(buf, 1, sizeof buf - 1, f);
+        buf[k] = 0;
+        t = strdup(buf);
+        fclose(f);
+    }
+    CHECK("...having written each unsaved file as NAME.SAV", t && !strncmp(t, "hello world", 11));
+    CHECK("...the unsaved file with no name too", mtime_now("UNTITL02.SAV") >= 0);
+    CHECK("...and only those", mtime_now("KEEP.SAV") < 0);
+    free(t);
+    t = NULL;
+    f = fopen(path("OOM.ERR"), "rb");
+    if (f) {
+        char buf[600];
+        size_t k = fread(buf, 1, sizeof buf - 1, f);
+        buf[k] = 0;
+        t = strdup(buf);
+        fclose(f);
+    }
+    CHECK("...and said which, and why it ended", t && strstr(t, "saved in") && strstr(t, "WORK.SAV") && strstr(t, "out of memory"));
+    free(t);
+    CHECK("...the real file untouched", file_is("KEEP.TXT", "kept\n", -1) && mtime_now("WORK.TXT") < 0);
+}
+
+static void test_check_switch(void)
+{
+    FILE *f;
+    char line[80];
+    int r, quiet;
+    puts("DE /CHECK");
+    remove(path("CHECK.OUT"));
+    CHECK("/CHECK FILE returns 0", de_check(path("CHECK.OUT")) == 0);
+    line[0] = 0;
+    f = fopen(path("CHECK.OUT"), "rb");
+    if (f) {
+        size_t k = fread(line, 1, sizeof line - 1, f);
+        line[k] = 0;
+        fclose(f);
+    }
+    CHECK("...and writes the line", !strcmp(line, "DE 0.6 ok\n"));
+    fflush(stderr);
+    quiet = dup(2);
+    freopen("/dev/null", "w", stderr);
+    r = de_check(path("NODIR/X.OUT"));
+    fflush(stderr);
+    dup2(quiet, 2);
+    close(quiet);
+    CHECK("...into a folder that is not there: 1, with no file", r == 1);
+}
+
 int main(int argc, char **argv)
 {
     t_rows = 25;
@@ -1245,6 +1484,10 @@ int main(int argc, char **argv)
     test_find_files();
     test_symbols();
     test_libraries();
+    test_disk_changes();
+    test_make_tabs();
+    test_big_and_memory();
+    test_check_switch();
     test_random();
     printf("\n%d passed, %d failed\n", passes, fails);
     return fails != 0;

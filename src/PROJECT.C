@@ -339,6 +339,7 @@ static void run_cmd(const Project *p, const char *cmd)
         ed_message(0, "%s ended, exit code %d. Alt-F5 shows its screen.", what, st);
     else
         ed_message(0, "%s ended. Alt-F5 shows its screen.", what);
+    ed_check_disk();            /* it may have written a file that is open */
 }
 
 static void run_it(const Project *p) { run_cmd(p, p->run); }
@@ -409,6 +410,7 @@ void proj_build(int then_run)
     if (old[0] && chdir(old)) {
         /* carry on */
     }
+    ed_check_disk();            /* a build may rewrite a file that is open */
     msgs_set("Build", p.dir, log);
     remove(log);
     /* Free Pascal writes its errors to BUILD.LOG itself (-Fe) */

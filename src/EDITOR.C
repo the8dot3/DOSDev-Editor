@@ -332,6 +332,20 @@ void ed_new(void)
     cur = nfiles++;
 }
 
+/* Out of memory, and DE ending: write every changed file out as NAME.SAV. */
+void ed_emergency_save(void)
+{
+    int i;
+    char name[DE_PATH];
+    for (i = 0; i < nfiles && i < MAXFILES; i++)
+        if (files[i] && buf_modified(files[i])) {
+            if (buf_emergency(files[i], i, name) == 0)
+                fprintf(stderr, "DE: your changes are saved in %s\n", name);
+            else
+                fprintf(stderr, "DE: couldn't save your changes to %s\n", name);
+        }
+}
+
 int ed_same_path(const char *a, const char *b)
 {
     for (; *a && *b; a++, b++) {
@@ -366,6 +380,11 @@ int ed_open(const char *path, int line)
     }
     b = buf_new();
     r = buf_load(b, path);
+    if (r == -2) {
+        ed_message(1, "Can't open %s: it is larger than %ld MB.", base_name(path), DE_MAX_FILE / (1024 * 1024));
+        buf_free(b);
+        return -1;
+    }
     if (r < 0) {
         ed_message(1, "Can't read %s", path);
         buf_free(b);
@@ -388,6 +407,63 @@ int ed_open(const char *path, int line)
     return 0;
 }
 
+/* Read the file again into its buffer, which loses what's in it. The
+ * cursor stays near where it was. 0 if it was. */
+static int reload_file(Buffer *b)
+{
+    int cy = b->cy, top = b->top, r = buf_load(b, b->path);
+    if (r == -2) {
+        ed_message(1, "Can't reload %s: it is larger than %ld MB.", base_name(b->path), DE_MAX_FILE / (1024 * 1024));
+        return -1;
+    }
+    if (r != 0) {
+        ed_message(1, "Can't read %s", b->path);
+        return -1;
+    }
+    b->cy = cy < b->n ? cy : b->n - 1;
+    b->top = top < b->n ? top : b->n - 1;
+    if (opt_suggest)
+        words_build(b);
+    msgs_attach(b);
+    return 0;
+}
+
+/* A run or a build is over: look at every file for a change made while it
+ * ran. A file with no unsaved changes is simply read again; one with
+ * changes asks. */
+void ed_check_disk(void)
+{
+    static const char *const rk[] = { "~R~eload", "~K~eep mine" };
+    int i, was = cur, n = 0;
+    char q[DE_PATH + 120];
+    Buffer *last = NULL;
+    for (i = 0; i < nfiles; i++) {
+        Buffer *b = files[i];
+        if (!buf_changed_on_disk(b))
+            continue;
+        if (buf_modified(b)) {
+            cur = i;
+            snprintf(q, sizeof q, "%s changed on disk, and you have changes in it that are not saved. "
+                     "Reload it and lose your changes, or keep yours?", base_name(b->path));
+            if (msg_box("Changed on disk", q, rk, 2, 0) != 0) {
+                long t;
+                if (!plat_mtime(b->path, &t))
+                    b->disk_time = t;        /* not asked again for this change */
+                continue;
+            }
+        }
+        if (reload_file(b) == 0) {
+            n++;
+            last = b;
+        }
+    }
+    cur = was;
+    if (n == 1)
+        ed_message(0, "%s changed on disk; reloaded.", base_name(last->path));
+    else if (n > 1)
+        ed_message(0, "%d files changed on disk; reloaded.", n);
+}
+
 static int save_file(int i, int as)
 {
     Buffer *b = files[i];
@@ -404,6 +480,18 @@ static int save_file(int i, int as)
             if (msg_box("Save as", "That file exists. Replace it?", yn, 2, 0) != 0)
                 return 0;
         }
+    }
+    if (b->path[0] && ed_same_path(p, b->path) && buf_changed_on_disk(b)) {
+        static const char *const rk[] = { "~R~eload", "~K~eep mine" };
+        char q[DE_PATH + 120];
+        int a;
+        snprintf(q, sizeof q, "%s changed on disk since DE read it. Reload it and lose your changes, "
+                 "or keep yours and replace it?", base_name(b->path));
+        a = msg_box("Changed on disk", q, rk, 2, 0);
+        if (a == 0 && reload_file(b) == 0)
+            ed_message(0, "Reloaded %s.", base_name(b->path));
+        if (a != 1)
+            return 0;
     }
     r = buf_save(b, p);
     if (r == 0) {
@@ -599,9 +687,15 @@ static int move(Buffer *b, int k)
 
 /* ---- editing -------------------------------------------------------------- */
 
-static int indent_unit(char *out)
+/* Make needs a tab to start a recipe line, whatever the option says. */
+static int tabs_only(const Buffer *b)
 {
-    if (!opt_spaces) {
+    return !opt_spaces || b->lang == L_MAKE;
+}
+
+static int indent_unit(const Buffer *b, char *out)
+{
+    if (tabs_only(b)) {
         out[0] = '\t';
         return 1;
     }
@@ -669,7 +763,7 @@ static void newline(Buffer *b)
         for (i = 0; i < L->len && i < b->cx && (L->s[i] == ' ' || L->s[i] == '\t') && n < 200; i++)
             ind[n++] = L->s[i];
         if (ends_block(b, L, b->cx))
-            n += indent_unit(ind + n);
+            n += indent_unit(b, ind + n);
     }
     /* Spaces before the cursor on an empty line were only indentation. */
     if (opt_auto && b->cx > 0 && indent_of(L) >= L->len && b->cx == L->len)
@@ -682,7 +776,7 @@ static void indent_lines(Buffer *b, int back)
 {
     int l1, l2, l, had = has_sel(b), delta = 0, keepx = b->cx;
     char unit[16];
-    int un = indent_unit(unit);
+    int un = indent_unit(b, unit);
     sel_lines(b, &l1, &l2);
     edit_begin(b, 0);
     for (l = l1; l <= l2; l++) {
@@ -728,7 +822,7 @@ static void tab(Buffer *b)
     }
     edit_begin(b, 0);
     delete_sel(b);
-    if (opt_spaces) {
+    if (!tabs_only(b)) {
         n = opt_indent - x_of(&b->ln[b->cy], b->cx) % opt_indent;
         memset(sp, ' ', n);
     } else {

@@ -8,9 +8,10 @@
 #include <stddef.h>
 
 #define DE_NAME    "DOSDev Editor"
-#define DE_VERSION "0.5"
+#define DE_VERSION "0.6"
 #define MAXFILES   16
 #define DE_PATH    260
+#define DE_MAX_FILE (16L * 1024 * 1024)   /* the largest file DE opens: see DE.TXT */
 
 /* ---- keys -------------------------------------------------------------- */
 /* A key is a character (32-255), one of the codes below, or either with
@@ -59,6 +60,9 @@ void plat_fullpath(const char *in, char *out);  /* an absolute path, DE_PATH lon
 /* Give the 16 text colours these R, G, B values (8-bit, colour 0 first);
  * NULL puts back the colours DE found. */
 void plat_palette(const unsigned char rgb[48]);
+/* When a file was last changed, as seconds (any fixed origin): 0 if it could
+ * be read, -1 if not (it is not there). */
+int  plat_mtime(const char *path, long *out);
 
 /* ---- memory ------------------------------------------------------------- */
 void *xrealloc(void *p, size_t n);
@@ -131,6 +135,7 @@ typedef struct {
     Line *ln; int n, cap;
     char path[DE_PATH];        /* empty: untitled */
     int crlf, final_nl, ctrlz, lang, isnew;
+    long disk_time;            /* the file's time on disk when loaded or saved; 0: not there then */
     int cy, cx, want, top, left;   /* cursor (line, byte), view */
     int sel, sy, sx;               /* selection: on, and its anchor */
     Change *ch; int nch, capch, upos, saved, group;
@@ -141,9 +146,11 @@ typedef struct {
 
 Buffer *buf_new(void);
 void  buf_free(Buffer *b);
-int   buf_load(Buffer *b, const char *path);   /* 0 read, 1 new file, -1 error */
+int   buf_load(Buffer *b, const char *path);   /* 0 read, 1 new file, -1 error, -2 too large (DE_MAX_FILE) */
 int   buf_save(Buffer *b, const char *path);   /* 0 saved, -1 not, -2 left in .$$$ */
 int   buf_modified(const Buffer *b);
+int   buf_changed_on_disk(const Buffer *b);    /* has the file changed since it was loaded or saved? */
+int   buf_emergency(const Buffer *b, int index, char *name);   /* write it as NAME.SAV (name: DE_PATH long); 0 written */
 void  buf_insert(Buffer *b, int l, int c, const char *t, int n);  /* cursor to its end */
 void  buf_delete(Buffer *b, int l1, int c1, int l2, int c2);      /* cursor to its start */
 char *buf_text(const Buffer *b, int l1, int c1, int l2, int c2, int *n);
@@ -256,6 +263,8 @@ extern char cfg_path[DE_PATH];
 void ed_init(void);
 int  ed_open(const char *path, int line);
 void ed_new(void);
+void ed_check_disk(void);      /* after a run: offer to reload each file that changed on disk */
+void ed_emergency_save(void);  /* out of memory: every unsaved file is written as NAME.SAV */
 void ed_paint(void);           /* draw everything into scr */
 int  ed_paint_check(void);     /* for the tests: does it draw the same without its row cache? */
 void ed_draw(void);            /* ... and show it */
@@ -276,6 +285,7 @@ int  ed_same_path(const char *a, const char *b);
 const char *ed_word(Buffer *b, char *out, int size);   /* the word at the cursor, or NULL */
 int  ed_cursor(int *row, int *col);            /* where the cursor is on the screen */
 const char *base_name(const char *path);
+int  de_check(const char *file);               /* DE /CHECK FILE: start, stop, write "DE n ok" there */
 int  config_load(void);
 int  config_save(void);
 
