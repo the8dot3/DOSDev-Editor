@@ -9,10 +9,13 @@
   again; one with unsaved changes asks.
 - Tab in a Makefile (`Makefile`, `*.MAK`, `*.MK`) types a tab character,
   whatever Options > Tab key inserts says.
+- A file changed on disk is also noticed by its size, as DOS file times
+  have 2-second steps.
 - DE opens files up to 16 MB. A larger file is refused with a message.
 - If memory runs out, DE writes each file with unsaved changes as
   `NAME.SAV` before it ends, and says so. A file with no name is written as
-  `UNTITLnn.SAV`.
+  `UNTITLnn.SAV`. It never writes over a file already there: it uses
+  `.SA0`, `.SA1` and so on.
 - `DE /CHECK FILE` starts DE and stops it with no keyboard, writes
   `DE 0.6 ok` in FILE and ends with exit code 0. A build can use it to see
   that DE.EXE starts.

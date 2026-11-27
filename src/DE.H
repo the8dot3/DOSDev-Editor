@@ -135,6 +135,7 @@ typedef struct {
     Line *ln; int n, cap;
     char path[DE_PATH];        /* empty: untitled */
     int crlf, final_nl, ctrlz, lang, isnew;
+    long disk_size;            /* ... and its size */
     long disk_time;            /* the file's time on disk when loaded or saved; 0: not there then */
     int cy, cx, want, top, left;   /* cursor (line, byte), view */
     int sel, sy, sx;               /* selection: on, and its anchor */

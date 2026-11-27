@@ -403,6 +403,19 @@ int buf_modified(const Buffer *b)
     return b->upos != b->saved;
 }
 
+/* A file's size, or -1. */
+static long file_size(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    long n = -1;
+    if (f) {
+        if (!fseek(f, 0, SEEK_END))
+            n = ftell(f);
+        fclose(f);
+    }
+    return n;
+}
+
 /* Has the file been written since this buffer read or wrote it? A file
  * that has gone, or that can't be told about, is not "changed": there is
  * nothing to lose by saving over it. */
@@ -411,7 +424,8 @@ int buf_changed_on_disk(const Buffer *b)
     long t;
     if (!b->path[0] || plat_mtime(b->path, &t))
         return 0;
-    return t != b->disk_time;
+    /* DOS file times are in 2-second steps: the size is compared too */
+    return t != b->disk_time || file_size(b->path) != b->disk_size;
 }
 
 /* For the tests: is everything as it should be? */
@@ -513,6 +527,7 @@ int buf_load(Buffer *b, const char *path)
         if (errno != ENOENT)
             return -1;
         b->disk_time = 0;
+        b->disk_size = -1;
         return 1;
     }
     if (fseek(f, 0, SEEK_END) || (size = ftell(f)) < 0 || fseek(f, 0, SEEK_SET)) {
@@ -570,6 +585,7 @@ int buf_load(Buffer *b, const char *path)
         free(b->ch[i].text);
     b->nch = b->upos = b->saved = 0;
     b->disk_time = when;
+    b->disk_size = size + b->ctrlz;      /* as it was on disk */
     return 0;
 }
 
@@ -650,21 +666,34 @@ int buf_save(Buffer *b, const char *path)
             words_build(b);      /* made again if the language changed */
     }
     b->disk_time = plat_mtime(b->path, &t) ? 0 : t;
+    b->disk_size = file_size(b->path);
     b->saved = b->upos;
     b->isnew = 0;
     return 0;
 }
 
+static int exists(const char *name)
+{
+    FILE *f = fopen(name, "rb");
+    if (f)
+        fclose(f);
+    return f != NULL;
+}
+
 /* Out of memory: the text goes to NAME.SAV (the file's name with .SAV), or
- * UNTITLnn.SAV for a file with no name, nn being its place in the list. */
+ * UNTITLnn.SAV for a file with no name, nn being its place in the list
+ * (1 is the first). A name already there (another file's, or one left by an
+ * earlier crash) is never written over: .SA0, .SA1 ... .SA9 are tried next. */
 int buf_emergency(const Buffer *b, int index, char *name)
 {
     const char *dot = strrchr(b->path, '.');
     const char *sep = strrchr(b->path, '/');
     const char *sep2 = strrchr(b->path, '\\');
     size_t n;
+    int k;
     if (!b->path[0]) {
-        sprintf(name, "UNTITL%02d.SAV", index % 100);
+        sprintf(name, "UNTITL%02d", (index + 1) % 100);
+        n = strlen(name);
     } else {
         if (sep2 > sep)
             sep = sep2;
@@ -672,7 +701,14 @@ int buf_emergency(const Buffer *b, int index, char *name)
         if (n > DE_PATH - 5)
             n = DE_PATH - 5;
         memcpy(name, b->path, n);
-        strcpy(name + n, ".SAV");
     }
-    return write_lines(b, name) ? 0 : -1;
+    for (k = -1; k <= 9; k++) {
+        if (k < 0)
+            strcpy(name + n, ".SAV");
+        else
+            sprintf(name + n, ".SA%d", k);
+        if (!exists(name))
+            return write_lines(b, name) ? 0 : -1;
+    }
+    return -1;                  /* eleven files by this name already */
 }

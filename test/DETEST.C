@@ -1254,6 +1254,10 @@ static void test_disk_changes(void)
     CHECK("an unchanged file: saving never asks", !t_snapped && file_is("CH.TXT", "Xone\n", -1) && strstr(row_text(24), "Saved CH.TXT"));
     CHECK("...and saving takes the new time as its own", !buf_changed_on_disk(b));
 
+    write_file("CH.TXT", "XYone\nmore\n", -1);
+    set_mtime("CH.TXT", mtime_now("CH.TXT") - 0);
+    set_mtime("CH.TXT", b->disk_time);
+    CHECK("a change in size alone, with the same time, is a change", buf_changed_on_disk(b));
     write_file("CH.TXT", "two\n", -1);
     set_mtime("CH.TXT", 1000000500L);
     CHECK("a file written by another program is changed on disk", buf_changed_on_disk(b));
@@ -1374,7 +1378,10 @@ static void test_big_and_memory(void)
     write_file("KEEP.TXT", "kept\n", -1);
     remove(path("WORK.SAV"));
     remove(path("KEEP.SAV"));
-    remove(path("UNTITL02.SAV"));
+    remove(path("WORK.SA0"));
+    remove(path("WORK.SA1"));
+    write_file("WORK.SAV", "from an earlier crash\n", -1);
+    remove(path("UNTITL04.SAV"));
     fflush(stdout);
     pid = fork();
     if (pid == 0) {
@@ -1390,6 +1397,9 @@ static void test_big_and_memory(void)
         freopen(path("OOM.ERR"), "w", stderr);
         type("hello world");
         run();
+        ed_open(path("WORK.H"), 0);      /* the same name, another extension */
+        type("header text");
+        run();
         ed_new();
         type("no name yet");
         run();
@@ -1402,7 +1412,7 @@ static void test_big_and_memory(void)
     waitpid(pid, &st, 0);
     CHECK("memory ran out: DE ends with exit code 3", WIFEXITED(st) && WEXITSTATUS(st) == 3);
     t = NULL;
-    f = fopen(path("WORK.SAV"), "rb");
+    f = fopen(path("WORK.SA0"), "rb");
     if (f) {
         char buf[300];
         size_t k = fread(buf, 1, sizeof buf - 1, f);
@@ -1410,10 +1420,22 @@ static void test_big_and_memory(void)
         t = strdup(buf);
         fclose(f);
     }
-    CHECK("...having written each unsaved file as NAME.SAV", t && !strncmp(t, "hello world", 11));
-    CHECK("...the unsaved file with no name too", mtime_now("UNTITL02.SAV") >= 0);
-    CHECK("...and only those", mtime_now("KEEP.SAV") < 0);
+    CHECK("...having written each unsaved file as NAME.SAV (here NAME.SA0: a NAME.SAV was there)", t && !strncmp(t, "hello world", 11));
     free(t);
+    CHECK("...a file already there is not written over", file_is("WORK.SAV", "from an earlier crash\n", -1));
+    t = NULL;
+    f = fopen(path("WORK.SA1"), "rb");
+    if (f) {
+        char buf[300];
+        size_t k = fread(buf, 1, sizeof buf - 1, f);
+        buf[k] = 0;
+        t = strdup(buf);
+        fclose(f);
+    }
+    CHECK("...nor one written a moment before: WORK.H goes to WORK.SA1", t && !strncmp(t, "header text", 11));
+    free(t);
+    CHECK("...the unsaved file with no name too", mtime_now("UNTITL04.SAV") >= 0);
+    CHECK("...and only those", mtime_now("KEEP.SAV") < 0);
     t = NULL;
     f = fopen(path("OOM.ERR"), "rb");
     if (f) {
@@ -1423,7 +1445,7 @@ static void test_big_and_memory(void)
         t = strdup(buf);
         fclose(f);
     }
-    CHECK("...and said which, and why it ended", t && strstr(t, "saved in") && strstr(t, "WORK.SAV") && strstr(t, "out of memory"));
+    CHECK("...and said which, and why it ended", t && strstr(t, "saved in") && strstr(t, "WORK.SA0") && strstr(t, "WORK.SA1") && strstr(t, "out of memory"));
     free(t);
     CHECK("...the real file untouched", file_is("KEEP.TXT", "kept\n", -1) && mtime_now("WORK.TXT") < 0);
 }
