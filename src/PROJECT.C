@@ -65,22 +65,6 @@ int is_dir(const char *path)
     return !stat(path, &st) && S_ISDIR(st.st_mode);
 }
 
-static int ext_in(const char *name, const char *list)
-{
-    const char *dot = strrchr(name, '.'), *p;
-    char e[8];
-    int i;
-    if (!dot || strchr(dot, '/') || strchr(dot, '\\') || strlen(dot + 1) > 6 || !dot[1])
-        return 0;
-    for (i = 0; dot[1 + i]; i++)
-        e[i] = (char)toupper((unsigned char)dot[1 + i]);
-    e[i] = 0;
-    for (p = list; (p = strstr(p, e)) != NULL; p++)
-        if (p[-1] == ' ' && p[strlen(e)] == ' ')
-            return 1;
-    return 0;
-}
-
 /* A source file's name, as compilers say them. */
 static int is_source(const char *name)
 {
@@ -89,7 +73,7 @@ static int is_source(const char *name)
         return 0;
     if (eq_nocase(base, "MAKEFILE") || eq_nocase(base, "GNUMAKEFILE"))
         return 1;
-    return ext_in(name, " C H CPP CXX CC HPP HH ASM INC S NAS MAC PAS PP LPR DPR BAS BI MAK MK ");
+    return ext_is(name, " C H CPP CXX CC HPP HH ASM INC S NAS MAC PAS PP LPR DPR BAS BI MAK MK ");
 }
 
 /* ---- the project --------------------------------------------------------------- */
@@ -278,7 +262,7 @@ static long newest(const char *dir, int depth, long best)
                 best = newest(p, depth + 1, best);
             continue;
         }
-        if (!is_source(e->d_name) && !ext_in(e->d_name, " BAT INI "))
+        if (!is_source(e->d_name) && !ext_is(e->d_name, " BAT INI "))
             continue;
         if ((t = mtime_of(p)) > best)
             best = t;
@@ -960,7 +944,7 @@ static void walk(const char *dir, const char *shown, int depth)
         if (is_dir(p)) {
             if (depth < 4 && !(depth == 0 && eq_nocase(e->d_name, "LIBS")))
                 walk(p, s, depth + 1);      /* not the libraries a project keeps in LIBS */
-        } else if (!ext_in(e->d_name, " EXE COM O OBJ LIB A ZIP 7Z GZ TGZ IMG IMA BIN DLL OVL PNG BMP GIF PCX JPG WAV MID $$$ "))
+        } else if (!ext_is(e->d_name, " EXE COM O OBJ LIB A ZIP 7Z GZ TGZ IMG IMA BIN DLL OVL PNG BMP GIF PCX JPG WAV MID $$$ "))
             search_file(p, s);
     }
     closedir(d);

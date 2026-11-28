@@ -166,6 +166,7 @@ int   buf_state_check(Buffer *b);               /* for the tests: are they what 
 enum { L_TEXT, L_C, L_ASM, L_PASCAL, L_BASIC, L_BATCH, L_MAKE, L_INI, L_COUNT };
 extern const char *const lang_name[L_COUNT];
 int  lang_of(const char *path);
+int  ext_is(const char *path, const char *list);   /* list: " C H CPP " */
 int  syn_line(int lang, const char *s, int n, int state, unsigned char *role);
 const char *lang_comment(int lang);
 int  lang_lists(int lang, const char *out[4]);   /* its keyword lists, for suggestions */

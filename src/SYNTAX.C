@@ -14,7 +14,9 @@ static int up(int c) { return toupper((unsigned char)c); }
 static int is_start(int c) { return isalpha((unsigned char)c) || c == '_'; }
 static int is_word(int c) { return isalnum((unsigned char)c) || c == '_'; }
 
-static int ext_is(const char *path, const char *list)
+/* Is the path's extension in the list (" C H CPP ", upper case)? Any case
+ * matches. PROJECT.C uses this too. */
+int ext_is(const char *path, const char *list)
 {
     const char *dot = strrchr(path, '.'), *p = list;
     const char *sep = strrchr(path, '/'), *sep2 = strrchr(path, '\\');
