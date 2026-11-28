@@ -22,8 +22,10 @@
   as `Foo::bar`, whether it is written in the class or outside it;
   constructors, destructors and operators too. Only the innermost class
   is written, and no namespace. Constructors' member initialiser lists
-  are not taken for functions, and `#if`/`#else` branches that each open
-  a brace no longer lose the symbols after them. F12 on `bar` finds
+  are not taken for functions, members initialised in braces (`a_{1}`)
+  included. `#if`/`#else` branches that each open a brace no longer lose
+  the symbols after them, `#if 0` blocks are passed over, and a `#` line
+  inside a comment is not taken as a directive. F12 on `bar` finds
   `Foo::bar`, looks in C files from C++ and the other way round, and opens
   DJGPP's `<vector>` and the like from `DJDIR\INCLUDE\CXX`.
 - The reference has 119 entries for the everyday C++ library, each with
@@ -36,7 +38,8 @@
 - g++'s `required from here` lines are notes, with their place, so F8
   goes to where your code used a template. F8 and Shift-F8 skip notes
   about files outside the project, such as g++'s notes in the C++
-  library's headers; F7 still lists them. The source lines GCC 9 and
+  library's headers; F7 still lists them. With no `project.ini`, the
+  project is only the file's own folder, not the folders in it. The source lines GCC 9 and
   later show under a message are text, even when they say `error:`. An
   error in a C++ library header (`vector`, `bits/vector.tcc`) has its
   place.

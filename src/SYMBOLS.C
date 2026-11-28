@@ -174,6 +174,7 @@ typedef struct {
     int paren;                  /* a definition's parameters still open, over lines */
     int init;                   /* in a constructor's initialiser list, until { or ; */
     struct { int depth, nsc; } ifs[IFS]; int nifs;   /* at each #if: #else starts there again */
+    int if0;                    /* in #if 0: 1 + the #ifs opened inside it; 0 not */
 } CppScope;
 
 static int word_at(const char *s, int n, int i, const char *w)
@@ -477,12 +478,46 @@ static int cpp_decl(CppScope *c, const Line *ln, int nl, int l, const unsigned c
     return cpp_function(c, ln, nl, l, i, role, out, k, max);
 }
 
+/* #if 0 ... #endif (or #else) is passed over whole: what is switched off
+ * may be half a function, and its braces would put the count out. Returns
+ * 1 if the line is in such a block, or starts or ends one. */
+static int cpp_if0(CppScope *c, const char *s, int n, const unsigned char *role)
+{
+    int i = skip_sp(s, n, 0), w, e;
+    if (i >= n || s[i] != '#' || role[i] != A_PREPROC)
+        return c->if0 > 0;
+    w = skip_sp(s, n, i + 1);
+    e = word_end(s, n, w);
+    if (!c->if0) {
+        int z = skip_sp(s, n, e);
+        if (word_at(s, n, w, "if") && z < n && s[z] == '0' && (z + 1 >= n || !is_id(s[z + 1]))) {
+            c->if0 = 1;
+            return 1;
+        }
+        return 0;
+    }
+    if (word_at(s, n, w, "if") || word_at(s, n, w, "ifdef") || word_at(s, n, w, "ifndef"))
+        c->if0++;
+    else if (word_at(s, n, w, "endif"))
+        c->if0--;
+    else if (c->if0 == 1 && (word_at(s, n, w, "else") || word_at(s, n, w, "elif"))) {
+        c->if0 = 0;                          /* what follows is switched on */
+        if (c->nifs < IFS) {                 /* ... and its #endif closes an #if, for cpp_braces */
+            c->ifs[c->nifs].depth = c->depth;
+            c->ifs[c->nifs].nsc = c->nsc;
+        }
+        c->nifs++;
+    }
+    return 1;
+}
+
 /* The braces on a line, and the scopes they open and close. */
 static void cpp_braces(CppScope *c, const char *s, int n, const unsigned char *role)
 {
-    int i = skip_sp(s, n, 0), define = c->in_define;
-    c->in_define = (define || (i < n && s[i] == '#')) && n > 0 && s[n - 1] == '\\';
-    if (!define && i < n && s[i] == '#') {
+    int i = skip_sp(s, n, 0), define = c->in_define, hash = i < n && s[i] == '#' && role[i] == A_PREPROC;
+    /* (hash: a # coloured as a directive; one inside a comment is not) */
+    c->in_define = (define || hash) && n > 0 && s[n - 1] == '\\';
+    if (!define && hash) {
         /* #if and #else branches that each open a brace: each branch starts
          * from the braces there were at the #if */
         int w = skip_sp(s, n, i + 1);
@@ -498,7 +533,7 @@ static void cpp_braces(CppScope *c, const char *s, int n, const unsigned char *r
         } else if (word_at(s, n, w, "endif") && c->nifs > 0)
             c->nifs--;
     }
-    if (define || (i < n && s[i] == '#'))
+    if (define || hash)
         return;                              /* a # line's braces are a macro's */
     for (; i < n; i++) {
         if (role[i] != A_SYMBOL)
@@ -654,6 +689,8 @@ int sym_scan(int lang, const Line *ln, int n, Sym *out, int max)
         switch (lang) {
         case L_C: k = c_line(s, len, role, l, out, k, max); break;
         case L_CPP:
+            if (cpp_if0(&cs, s, len, role))
+                break;
             i = cs.nsc ? cs.sc[cs.nsc - 1].depth : 0;     /* where declarations are */
             e = skip_sp(s, len, 0);
             if (cs.paren)

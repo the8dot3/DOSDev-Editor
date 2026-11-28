@@ -1251,6 +1251,50 @@ static void test_cpp_symbols(void)
         "void g() {}\n", s);
     CHECK("#if and #else branches that each open a brace: the symbols after them are still found",
           has_sym(s, n, "f", 1, 'f') && has_sym(s, n, "f", 3, 'f') && has_sym(s, n, "g", 7, 'f') && n == 3);
+    n = scan(L_CPP,
+        "#if 0\n"
+        "void old(int a) {\n"
+        "    if (a) {\n"
+        "#endif\n"
+        "void live() {}\n"
+        "#if 0\n"
+        "#ifdef X\n"
+        "#endif\n"
+        "int dead() {}\n"
+        "#else\n"
+        "int alive() {}\n"
+        "#endif\n", s);
+    CHECK("#if 0 blocks are passed over, even with half a function in them", has_sym(s, n, "live", 4, 'f')
+          && has_sym(s, n, "alive", 10, 'f') && n == 2);
+    n = scan(L_CPP,
+        "#ifdef A\n"
+        "int f() {\n"
+        "/*\n"
+        "#ifdef X\n"
+        "*/\n"
+        "#else\n"
+        "int g() {\n"
+        "#endif\n"
+        "    return 0;\n"
+        "}\n"
+        "int h() {}\n", s);
+    CHECK("a # line inside a comment is not a directive", has_sym(s, n, "f", 1, 'f') && has_sym(s, n, "g", 6, 'f')
+          && has_sym(s, n, "h", 10, 'f') && n == 3);
+    n = scan(L_CPP,
+        "#ifdef A\n"
+        "#if 0\n"
+        "x\n"
+        "#else\n"
+        "#endif\n"
+        "int f1() {\n"
+        "#else\n"
+        "int f2() {\n"
+        "#endif\n"
+        "    return 0;\n"
+        "}\n"
+        "int f3() {}\n", s);
+    CHECK("...an #if 0 with an #else inside another #if keeps the count", has_sym(s, n, "f1", 5, 'f')
+          && has_sym(s, n, "f2", 7, 'f') && has_sym(s, n, "f3", 11, 'f') && n == 3);
     mkdir(path("CPPP"), 0777);
     write_file("CPPP/project.ini", "[project]\nname = Geometry\n", -1);
     write_file("CPPP/GEO.HPP", "#pragma once\nnamespace geo {\nclass Point {\npublic:\n    double area() const { return 0; }\n"
