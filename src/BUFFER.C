@@ -472,10 +472,12 @@ void buf_state(Buffer *b, int upto)
     }
     if (b->hknown > b->n)
         b->hknown = b->n;
-    if (b->hvalid < 1) {
-        b->hs[0] = 0;
+    /* The first line starts in the normal state. (Set every time: buf_load
+     * and buf_save set hvalid to 1 without it, and a stray byte here is
+     * read as a state.) */
+    b->hs[0] = 0;
+    if (b->hvalid < 1)
         b->hvalid = 1;
-    }
     for (i = b->hvalid; i <= upto;) {
         const Line *L = &b->ln[i - 1];
         unsigned char v;
