@@ -319,3 +319,50 @@ Most of the text growth is the 119 reference entries (REF.C grew from
 - The raw-string delimiter table is shared by all files and never emptied
   while DE runs (252 delimiters). This is what keeps a state's meaning
   fixed; the manual and the tour say so.
+
+## Fix round 1
+
+The findings are in `docs/DE-0.7-findings-1.md` (commit `b7d5c72`). Every
+item is fixed, test first: each new check was run against the code before
+its fix, and failed (item 1 aborted the test program under the address
+sanitizer, which reproduced the overflow). The one exception is item 11:
+it is a regression test for a fix already made (`99203fa`), so it passed
+from the start.
+
+Commits: `eab2dc7` (the code, the tests, DE.TXT, MANUAL.H, CHANGELOG),
+`990f00a` (TOUR.md), and the commit that adds this section.
+
+| # | Finding | What was done |
+|---|---------|---------------|
+| 1 | Critical: `add_scoped` wrote past its 80-byte buffer | A name is now the innermost class and the name, written with one bounded `snprintf` into a buffer of `Sym`'s size. There was no other `n += snprintf(..., sizeof - n)` in `src/`. Test: classes with 39-letter names inside each other, and a method: `Inner::method`. |
+| 2 | Initialiser lists gave false symbols | `after_params` follows a definition's parameters over lines; from a single `:` after the `)` the scanner skips lines until `{` or `;` (`CppScope.init`). A declaration-level line starting with `:` or `,` is never a definition. Both layouts, and the in-class one, are in the sample test, which now expects exactly 23 symbols. |
+| 3 | F8 stepped into library headers | `msgs_set` keeps the project's folder; F8 and Shift+F8 skip notes whose file is not in it or below it (`f8_stops_at`). F7 lists every note, and Enter goes to it. Tested with the real g++ 9.3 output: F8 visits BAD.CPP 7:23, 7:17, 7:17, 9:11, 4:8, 4:28, 10:5, 11:13, 8:20, 3:47, then goes round; Shift+F8 goes back; no header buffer is opened; 7 errors and 7 notes. `run.sh` passes `test/` to the program so it can read `gpp93-real.txt`. |
+| 4 | The manual on F8 and on the raw-string limit | DE.TXT says F8 skips notes outside the project (and F7 lists them), and says exactly what happens when the delimiter table is full. |
+| 5 | `.H` rule: `template` as a C name; `#include<vector>` | `template` counts only when `<` follows, after any spaces; `#include<name>` with no space counts. Tested both ways. |
+| 6 | Full delimiter table | The last state, `RAW_WILD`, is a wildcard: it ends at the first `)` followed by up to 16 delimiter characters and a `"`. 251 delimiters, the empty one included, are kept exactly. It is one fixed rule, so stopping early stays correct. Tested with 300 delimiters: each still ends at its own `)delim"`, the table fills, and the wildcard ends where described and not at `)` followed by `(`. This test runs last, as the table lasts for the whole program. |
+| 7 | `#if`/`#else` branches lost later symbols | `cpp_braces` keeps the brace count and scopes at `#if`/`#ifdef`/`#ifndef` (8 deep) and restores them at `#else`/`#elif`. Tested. |
+| 8 | Out-of-class names kept their namespaces | Both are `Class::method` (the last class part and the name). DE.TXT says so. Tested with `void outer::inner::Widget::decl() {}`. |
+| 9 | `.5e-3` | The exponent sign is taken after a number that starts with a dot. Tested. |
+| 10 | Member calls got free-function hints | `after_member`: in C++, after `.` or `->`, the reference is not used for suggestions, the status-line signature or Ctrl+F1 (which then searches the list). Tested with `s.find(`, `p->get(` and `m.count`. |
+| 11 | First-line state test; changelog wording | A test sets `hs[0]` to a comment state with `hvalid` 1 and checks the first line's colours and `hs[0]` after drawing. The changelog says the state was never set. |
+| 12 | SYNTAX.C's needs from its host | `std_header` uses its own `STD_PATH`; SYNTAX.C no longer needs `DE_PATH`. A comment at its top lists what the host header must provide: the `L_` enum with `L_CPP` in its place, the eight `A_` roles, `xrealloc`, `base_name`, and the prototypes of SYNTAX.C's own functions. |
+
+**My g++ 9 test lines against the real output.** The shapes I had written
+from memory matched the real ones: `FILE:LINE:COL:   required from here`
+with three spaces, notes in `c:/djgpp/include/cxx/9/bits/...`, the source
+lines with `|`. Two things in the real output I had not covered: a note
+whose text starts with a tab (`note: \t'virtual int Shape::area() const'`),
+and mark lines that are only `|` and spaces, or `~` and trailing spaces.
+Both are now tested and read correctly. The g++ 9 parse tests now use the
+real lines; the two that remain constructed (an error in `vector` itself,
+and in a `.tcc`) are marked so.
+
+**Numbers.** `make test`: 351 passed, 0 failed (23 new checks since the
+first report). The cross build has no warnings; `make package` builds
+`build/DE.ZIP` (348,941 bytes). DE.EXE: 1,062,032 bytes with `-g`,
+403,968 stripped (+2,560 over the first 0.7 build; +39,424 over DE 0.6).
+
+**Still needs a real DOS run**, as before: building with `gpp`, F12 into
+`DJDIR/include/cxx`, speed on large C++ files. Reading g++ 9.3's messages
+is now tested with its real output, but F8 and the Messages window with
+it have only been run on the stand-in screen.
