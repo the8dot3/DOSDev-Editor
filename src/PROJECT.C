@@ -950,14 +950,6 @@ static void walk(const char *dir, const char *shown, int depth)
     closedir(d);
 }
 
-static int has_capital(const char *s)
-{
-    for (; *s; s++)
-        if (isupper((unsigned char)*s))
-            return 1;
-    return 0;
-}
-
 void find_in_files(void)
 {
     static char what[80];
@@ -971,7 +963,7 @@ void find_in_files(void)
     proj_find(b, &p);
     needle = what;
     needle_n = (int)strlen(what);
-    needle_cs = has_capital(what);
+    needle_cs = has_upper(what);
     nfound = scanned = 0;
     busy_box("Find in files", what, p.dir);
     snprintf(t, sizeof t, "Find in files: \"%.40s\"", what);

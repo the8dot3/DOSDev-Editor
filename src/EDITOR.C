@@ -1099,7 +1099,8 @@ static void toggle_comment(Buffer *b)
 
 /* ---- find and replace ------------------------------------------------------- */
 
-static int has_upper(const char *s)
+/* Does it have a capital? Then a search's case counts. Find in files too. */
+int has_upper(const char *s)
 {
     for (; *s; s++)
         if (isupper((unsigned char)*s))

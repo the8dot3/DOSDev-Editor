@@ -285,6 +285,7 @@ void ed_back(void);                            /* Alt+Left */
 void ed_forget(Buffer *b);                     /* a file closing: forget places in it */
 int  ed_save_all(void);                        /* save every changed file that has a name */
 int  ed_same_path(const char *a, const char *b);
+int  has_upper(const char *s);                  /* a capital in it? */
 const char *ed_word(Buffer *b, char *out, int size);   /* the word at the cursor, or NULL */
 int  ed_cursor(int *row, int *col);            /* where the cursor is on the screen */
 const char *base_name(const char *path);
