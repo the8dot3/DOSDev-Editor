@@ -370,3 +370,27 @@ first report). The cross build has no warnings; `make package` builds
 `DJDIR/include/cxx`, speed on large C++ files. Reading g++ 9.3's messages
 is now tested with its real output, but F8 and the Messages window with
 it have only been run on the stand-in screen.
+
+## Fix round 2
+
+The re-review left four small items. Each is fixed, test first, in its own
+commit. Each new check failed against the code before its fix, except
+item 1's, which is a corrected test. Its old form failed from a deep path
+(350 of 351), and the new form passes from both paths.
+
+| # | Item | Commit | What was done |
+|---|------|--------|---------------|
+| 1 | The F7 test depended on the working folder | `4a77cf1` | On Linux, `c:/djgpp/...` gets the working folder in front, and the status line's message about it was cut off in a deep checkout. The test now checks that the list's selected line is the `stl_vector.h(1184)` note, and that Enter went to it by where F8 goes next (on to BAD.CPP 7:17). |
+| 2 | Initialiser lists, residual | `4aa732b` | While in a list, a `{` right after a name or a `>` is a member's initialiser (`a_{1}`), not the body. The list now starts at the `:` even when a `{` follows on the same line. The three layouts the review found are tested (exactly 4 symbols). |
+| 3 | F8 edge cases | `88e9c00` | The rule: the project is the folder with `project.ini` and the folders in it; with no `project.ini`, only the files directly in the file's own folder (which may be a drive's root). F8 skips notes outside it, the user's own headers included; F7 lists them all. DE.TXT says both. Test: a note in a folder below, with no `project.ini`, is skipped. |
+| 4 | `#if 0`, and `#` in a comment | `2874d71` | The C++ symbol scanner, and nothing else, passes over everything from `#if 0` to its `#endif` or `#else` (`cpp_if0`). An `#if 0` left at its `#else` counts as an `#if` for the `#endif` after it, so an enclosing `#if`'s `#else` still finds its entry; this case has its own test, checked to fail without that step. `cpp_braces` treats a line as a directive only when its `#` is coloured as one, so `#ifdef` in a block comment is not. |
+
+CHANGELOG, DE.TXT, src/MANUAL.H and TOUR.md (`6b91db2`, which now names
+`2874d71`) say what changed.
+
+**Numbers.** `make test` gives 357 passed, 0 failed (6 new checks), both
+from `/home/user/dosdev-editor` and from a copy under a 113-character path
+(`.../scratchpad/a/very/long/path/to/show/the/problem/de`). The cross
+build has no warnings. `make package` builds `build/DE.ZIP` (350,297
+bytes). DE.EXE is 1,060,812 bytes with `-g` and 403,968 stripped, the
+same as after round 1.
