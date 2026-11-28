@@ -7,5 +7,5 @@ Keywords:       editor, IDE, programming, syntax colours, SDL3, PDCurses, DOSDev
 Author:         DOSDev
 Maintained-by:  DOSDev
 Platforms:      DOS, 386 or newer (DJGPP, with CWSDPMI)
-Copying-policy: Free to use, copy and change
+Copying-policy: GPL version 2 or later (see LICENSE)
 End

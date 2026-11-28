@@ -281,7 +281,7 @@ DE opens files up to 16 MB. A larger file is refused with a message,
 and nothing else changes: DE holds the whole file in memory, and more
 than that may not fit. If memory runs out all the same, DE writes
 every file with unsaved changes next to the original as NAME.SAV (a
-file with no name, as UNTITLnn.SAV in the folder DE is in, nn being
+file with no name, as UNTITLnn.SAV in the current folder, nn being
 its number in the Window menu), says so, and ends with exit code 3.
 A NAME.SAV that is already there is never written over: DE uses
 NAME.SA0, NAME.SA1 and so on, and says which.

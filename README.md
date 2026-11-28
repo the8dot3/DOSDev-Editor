@@ -3,7 +3,7 @@
 DE is a colour text editor and IDE for DOS programmers, in the style of the
 Borland IDEs. It builds and runs your programs, colours C, assembly, Pascal
 and BASIC, suggests words as you type, and knows the SDL3 and PDCurses
-functions. It is the editor of [DOSDev](https://github.com/the8dot3/DOSDev),
+functions. It is the editor of DOSDev, a DOS development environment for Linux,
 and it also works on its own in any DOS system with a 386 or newer and a DPMI
 server (CWSDPMI).
 
