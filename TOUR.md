@@ -4,9 +4,10 @@ This is a guided reading of DE's source code. It is meant to be read beside
 the source, one chapter at a time. It explains what each part of the program
 does, how it does it, and why it is done that way.
 
-Everything here was checked against the code at commit `5f6fe6a`, which is
-the released DE 0.6. References look like `EDITOR.C:1865`: a file in `src/`
-and a line number. If the code changes later, the line numbers drift, but the
+Everything here was checked against the code at commit `de7dfe5`, which is
+DE 0.7, the version that made C++ a language of its own. (The first edition
+of this tour described DE 0.6, at `5f6fe6a`.) References look like
+`EDITOR.C:1864`: a file in `src/` and a line number. If the code changes later, the line numbers drift, but the
 function names stay useful: search for the name.
 
 A note on words. When a C or DOS term is used for the first time, it is
@@ -44,28 +45,28 @@ again, in two sentences.
 
 | File | Lines | Size | What it is responsible for |
 |------|------:|-----:|----------------------------|
-| `src/DE.H` | 326 | 17 KB | Every type, constant and function that more than one file shares. It is the program's table of contents. |
+| `src/DE.H` | 334 | 17 KB | Every type, constant and function that more than one file shares. It is the program's table of contents. |
 | `src/MAIN.C` | 193 | 6 KB | Starting and stopping: the command line, `DE /CHECK`, `DE /SPEED`, the options file `DE.CFG`, and the main loop. |
-| `src/EDITOR.C` | 1,976 | 58 KB | The editor itself: the open files, what every key does, the clipboard, find and replace, and drawing the editor window. |
-| `src/BUFFER.C` | 714 | 19 KB | One file in memory: its array of lines, the two basic changes (insert and delete), undo and redo, loading and saving, and running out of memory. |
-| `src/SYNTAX.C` | 717 | 24 KB | Syntax colours: which language a file is in, and a colour role for every byte of a line, with a state carried from one line to the next. |
+| `src/EDITOR.C` | 1,975 | 58 KB | The editor itself: the open files, what every key does, the clipboard, find and replace, and drawing the editor window. |
+| `src/BUFFER.C` | 744 | 20 KB | One file in memory: its array of lines, the two basic changes (insert and delete), undo and redo, loading and saving, and running out of memory. |
+| `src/SYNTAX.C` | 956 | 33 KB | Syntax colours: which language a file is in (a `.H` by its text too), and a colour role for every byte of a line, with a state carried from one line to the next, C++'s raw strings included. |
 | `src/SCREEN.C` | 241 | 8 KB | The screen as an array of cells, simple drawing (text, boxes, shadows), the colour roles and the five themes. |
 | `src/DOS.C` | 507 | 15 KB | The only file that knows it runs on DOS: the BIOS screen and keyboard, the mouse, the VGA colours, running other programs. |
-| `src/DIALOG.C` | 758 | 26 KB | Menus, input boxes, message boxes, the Open dialog, and a general "pick a line from a list" window. |
-| `src/SUGGEST.C` | 606 | 18 KB | Suggestions while typing (the dimmed "ghost"), the Ctrl+Space list, each file's word index, and "which call is the cursor in". |
-| `src/REF.C` | 426 | 50 KB | The built-in reference: 373 one-line entries for C, SDL3, PDCurses, DOS, assembly, Pascal and BASIC, and two functions to look them up. |
-| `src/SYMBOLS.C` | 644 | 21 KB | Finding functions, labels and types from the shape of lines; Go to symbol (Ctrl+L) and Go to definition (F12). |
-| `src/PROJECT.C` | 1,013 | 30 KB | Projects (`project.ini`, `BUILD.BAT`), building and running, reading compiler messages, the Messages window, Find in files. |
-| `src/HELP.C` | 288 | 10 KB | The manual viewer (F1), the reference list (Shift+F1) and one reference entry (Ctrl+F1). |
-| `src/MANUAL.H` | 430 | 21 KB | `DE.TXT` turned into a C array of strings by `make`. It is generated: change `DE.TXT`, not this file. |
+| `src/DIALOG.C` | 737 | 26 KB | Menus, input boxes, message boxes, the Open dialog, and a general "pick a line from a list" window. |
+| `src/SUGGEST.C` | 629 | 19 KB | Suggestions while typing (the dimmed "ghost"), the Ctrl+Space list, each file's word index, and "which call is the cursor in". |
+| `src/REF.C` | 626 | 71 KB | The built-in reference: 492 one-line entries for C, C++, SDL3, PDCurses, DOS, assembly, Pascal and BASIC, and three functions to look them up. |
+| `src/SYMBOLS.C` | 987 | 36 KB | Finding functions, labels and types from the shape of lines (for C++, with the braces counted); Go to symbol (Ctrl+L) and Go to definition (F12). |
+| `src/PROJECT.C` | 1,006 | 31 KB | Projects (`project.ini`, `BUILD.BAT`), building and running, reading compiler messages, the Messages window, Find in files. |
+| `src/HELP.C` | 289 | 10 KB | The manual viewer (F1), the reference list (Shift+F1) and one reference entry (Ctrl+F1). |
+| `src/MANUAL.H` | 502 | 25 KB | `DE.TXT` turned into a C array of strings by `make`. It is generated: change `DE.TXT`, not this file. |
 
-The source is about 8,840 lines; 8,409 without `MANUAL.H`.
+The source is about 9,730 lines; 9,224 without `MANUAL.H`.
 
 Around the source:
 
 | File | What it is |
 |------|------------|
-| `test/DETEST.C` (1,516 lines) | The tests: scripted keys played into the real editor code, on Linux. |
+| `test/DETEST.C` (1,879 lines) | The tests: scripted keys played into the real editor code, on Linux. |
 | `test/HOSTPLAT.C` (119 lines) | A stand-in for `DOS.C` that the tests use: keys come from a script, the screen goes into an array. |
 | `test/run.sh` (12 lines) | Compiles and runs the tests (`make test`). |
 | `test/stubs/` | Stand-ins for DJGPP's headers, so `DOS.C` can at least be type-checked on Linux. |
@@ -82,12 +83,12 @@ Around the source:
    draws uses it.
 4. **`BUFFER.C`**. The heart of the data: how text is held and changed.
 5. **`EDITOR.C`**. The longest file. Read it in this order: `ed_key`
-   (`EDITOR.C:1556`), then `move` (`EDITOR.C:586`), `type_char`
-   (`EDITOR.C:724`), then the drawing code from `draw_line`
-   (`EDITOR.C:1620`) to `ed_draw` (`EDITOR.C:1872`). The rest is commands
+   (`EDITOR.C:1555`), then `move` (`EDITOR.C:584`), `type_char`
+   (`EDITOR.C:722`), then the drawing code from `draw_line`
+   (`EDITOR.C:1619`) to `ed_draw` (`EDITOR.C:1871`). The rest is commands
    built from the same pieces.
-6. **`SYNTAX.C`**. Start with `syn_line` (`SYNTAX.C:669`) and `syn_c`
-   (`SYNTAX.C:197`).
+6. **`SYNTAX.C`**. Start with `syn_line` (`SYNTAX.C:906`) and `syn_c`
+   (`SYNTAX.C:401`).
 7. **`DOS.C`**. Now that you know what the rest asks of it.
 8. **`DIALOG.C`**, then **`SUGGEST.C`** with **`REF.C`**, **`SYMBOLS.C`**,
    **`PROJECT.C`**, **`HELP.C`**: the features, in any order.
@@ -196,7 +197,7 @@ So `a` becomes the number 97. Chapter 3 explains the key numbers.
 
 `ed_step` is one turn of the loop:
 
-`src/EDITOR.C:1865-1870`
+`src/EDITOR.C:1864-1869`
 ```c
 void ed_step(void)
 {
@@ -214,12 +215,12 @@ on" after you let go.
 
 ### Step 3: what the key means (EDITOR.C)
 
-`ed_key` (`EDITOR.C:1556`) tries the meanings of a key in order: Tab taking
+`ed_key` (`EDITOR.C:1555`) tries the meanings of a key in order: Tab taking
 a suggestion, the mouse, F10, Alt+digit, the shortcut table, Alt+letter for
 a menu, the moving keys, and the editing keys. A plain character falls
 through to the end:
 
-`src/EDITOR.C:1607-1612`
+`src/EDITOR.C:1606-1611`
 ```c
     default:
         if (k >= 32 && k <= 255)
@@ -231,7 +232,7 @@ through to the end:
 
 `type_char` prepares the change and makes it:
 
-`src/EDITOR.C:724-732`
+`src/EDITOR.C:722-730`
 ```c
 static void type_char(Buffer *b, int ch)
 {
@@ -249,7 +250,7 @@ static void type_char(Buffer *b, int ch)
 selection. A space after a word starts a new undo group, so undo takes back
 a word at a time. Then:
 
-`src/EDITOR.C:745-751`
+`src/EDITOR.C:743-749`
 ```c
     if (overwrite && b->cx < L->len)
         buf_delete(b, b->cy, b->cx, b->cy, b->cx + 1);
@@ -327,7 +328,7 @@ left it (chapter 7).
 
 The next `ed_step` finds no key waiting, so it calls `ed_draw`:
 
-`src/EDITOR.C:1872-1879`
+`src/EDITOR.C:1871-1878`
 ```c
 void ed_draw(void)
 {
@@ -339,24 +340,25 @@ void ed_draw(void)
 }
 ```
 
-`ed_paint` (`EDITOR.C:1787`) draws the whole editor into an array in
+`ed_paint` (`EDITOR.C:1786`) draws the whole editor into an array in
 memory: the menu bar, the frame, each visible line, the scroll bar and the
 status line. It first makes sure the syntax state at the start of every
-visible line is known (`buf_state(b, b->top + th)`, `EDITOR.C:1816`). Each
-line then goes through `cached_line` (`EDITOR.C:1675`). If nothing about the
+visible line is known (`buf_state(b, b->top + th)`, `EDITOR.C:1815`). Each
+line then goes through `cached_line` (`EDITOR.C:1674`). If nothing about the
 line changed since it was last drawn, its cells are copied from a cache. The
 line we typed in has a new stamp, so it is drawn again by `draw_line`
-(`EDITOR.C:1620`).
+(`EDITOR.C:1619`).
 
 `draw_line` asks `syn_line` for a colour role for every byte:
 
-`src/SYNTAX.C:669-682`
+`src/SYNTAX.C:906-920`
 ```c
 int syn_line(int lang, const char *s, int n, int state, unsigned char *role)
 {
     paint(role, 0, n, A_TEXT);
     switch (lang) {
-    case L_C: return syn_c(s, n, state, role);
+    case L_C: return syn_c(s, n, state, role, 0);
+    case L_CPP: return syn_c(s, n, state, role, 1);
     case L_ASM: return syn_asm(s, n, role);
     case L_PASCAL: return syn_pascal(s, n, state, role);
     case L_BASIC: return syn_basic(s, n, role);
@@ -372,7 +374,7 @@ Then it turns each byte into a screen cell. A role (such as `A_KEYWORD`)
 becomes an attribute through the table `attr[]`. A tab becomes several
 spaces. The selection and a matching bracket override the colour:
 
-`src/EDITOR.C:1641-1654`
+`src/EDITOR.C:1640-1653`
 ```c
         ch = (unsigned char)L->s[i];
         a = attr[roles[i]];
@@ -833,7 +835,7 @@ column.
 The selection is a flag and an *anchor*: `sel`, `sy`, `sx`. The other end of
 the selection is always the cursor. `sel_range` (`EDITOR.C:115`) orders the
 two ends so the start comes first. Shift plus a moving key sets the anchor
-where the cursor was, then moves the cursor (`move`, `EDITOR.C:602-607`).
+where the cursor was, then moves the cursor (`move`, `EDITOR.C:600-605`).
 
 ### Two changes make all the others
 
@@ -901,12 +903,12 @@ Backspace.
 2. **`b`**. Same kind, and the cursor is where `a` left it, so no new group.
    `buf_insert` sees that `ch[0]` is an insert in this group that ends at
    (0,1), and extends it: `ch[0] = { 'i', (0,0)-(0,2), "ab" }`.
-3. **Enter**. `newline` (`EDITOR.C:753`) uses kind 0, so a new group, 2.
+3. **Enter**. `newline` (`EDITOR.C:751`) uses kind 0, so a new group, 2.
    The text has a line break, so it is a new record:
    `ch[1] = { 'i', (0,2)-(1,0), "\n" }`. `raw_insert` keeps the tail of
    line 0 (empty here), opens a slot after line 0 in the line array, and
    makes the new line 1 `""` plus the tail.
-4. **Backspace** at (1,0). A new group, 3. `backspace` (`EDITOR.C:836`)
+4. **Backspace** at (1,0). A new group, 3. `backspace` (`EDITOR.C:834`)
    calls `buf_delete(b, 0, 2, 1, 0)`. `buf_text` copies what is about to go
    (`"\n"`), and `ch[2] = { 'd', (0,2)-(1,0), "\n" }`. `raw_delete` joins
    line 0 and line 1 and removes line 1.
@@ -922,27 +924,27 @@ there are two lines again. The second undoes `ch[1]`: delete (0,2)-(1,0),
 back to `"ab"`. The third undoes `ch[0]`: delete (0,0)-(0,2), back to `""`.
 `upos` is 0. Ctrl+Y three times plays them forward.
 
-The test `test_random` (`test/DETEST.C:1003`) checks exactly this
-property: after 600 random keys, undoing everything gives back the empty
-file, and redoing everything gives back the same text.
+The random-edit test (`random_rounds`, `test/DETEST.C:1344`) checks exactly
+this property: after 600 random keys, undoing everything gives back the
+empty file, and redoing everything gives back the same text.
 
 ### Loading and saving
 
-`buf_load` (`BUFFER.C:511`) reads the whole file with one `fread`, then cuts
+`buf_load` (`BUFFER.C:523`) reads the whole file with one `fread`, then cuts
 it into lines. On the way it notes three things, so the file can be written
 back the same way:
 
 - **Line endings.** DOS ends lines with CR LF (`"\r\n"`), Linux with LF
   alone. DE counts both and keeps CRLF if at least half of the line breaks
-  are CRLF (`crlfs * 2 >= lfs`, `BUFFER.C:557`). A file with no line breaks
+  are CRLF (`crlfs * 2 >= lfs`, `BUFFER.C:570`). A file with no line breaks
   counts as CRLF.
 - **The last line break.** `final_nl` says whether the last line ends with
   one.
 - **Ctrl+Z.** Old DOS programs end text files with byte 1Ah. `ctrlz` keeps
   it, and it is not shown as text.
 
-`buf_save` (`BUFFER.C:640`) writes to `NAME.$$$` first (`temp_name`,
-`BUFFER.C:594`), then removes the old file and renames the new one. DOS
+`buf_save` (`BUFFER.C:669`) writes to `NAME.$$$` first (`temp_name`,
+`BUFFER.C:607`), then removes the old file and renames the new one. DOS
 cannot rename over an existing file, hence the remove. If the write fails,
 the old file is untouched. If the rename fails and the old file is gone,
 the text is still safe in the `.$$$` file, and `buf_save` returns -2 so the
@@ -953,8 +955,10 @@ file's time and size (`disk_time`, `disk_size`). `buf_changed_on_disk`
 (`BUFFER.C:422`) compares both, because DOS file times move in 2-second
 steps, so two saves close together can have the same time. Saving over a
 file that another program changed asks first (`save_file`,
-`EDITOR.C:484-495`), and coming back from a build or a run checks every
-open file (`ed_check_disk`, `EDITOR.C:434`).
+`EDITOR.C:482-493`), and coming back from a build or a run checks every
+open file (`ed_check_disk`, `EDITOR.C:434`). Answering Keep mine there takes
+the file's time and size as they are now (`buf_disk_seen`, `BUFFER.C:434`),
+so the same change is not asked about again.
 
 ---
 
@@ -968,7 +972,7 @@ for every line drawn would be slow on a long file.
 
 ### One line at a time, with a state
 
-`syn_line` (`SYNTAX.C:669`) is the contract for every language:
+`syn_line` (`SYNTAX.C:906`) is the contract for every language:
 
 ```
  syn_line(language, line text, state at the start)
@@ -976,16 +980,18 @@ for every line drawn would be slow on a long file.
      -> the state at the end of the line
 ```
 
-The state is a small number (`SYNTAX.C:11`):
+The state is a small number (`SYNTAX.C:13`):
 
 ```c
-enum { S_NORMAL, S_CCOMMENT, S_PBRACE, S_PPAREN };
+enum { S_NORMAL, S_CCOMMENT, S_PBRACE, S_PPAREN, S_RAW };
 ```
 
 C needs one extra state: inside `/* ... */`. Pascal needs two: inside
-`{ ... }` and inside `(* ... *)`. For every other language, DE's colouring
-has no comment that can cross a line break, so those lines always end in
-`S_NORMAL`. For C:
+`{ ... }` and inside `(* ... *)`. C++ has C's comment, and also raw strings,
+which take every state from `S_RAW` up (see [C++: a state that remembers a
+delimiter](#c-a-state-that-remembers-a-delimiter) below). For every other
+language, DE's colouring has no comment that can cross a line break, so
+those lines always end in `S_NORMAL`. For C:
 
 ```
                   "/*" with no "*/" after it on the line
@@ -997,9 +1003,9 @@ has no comment that can cross a line break, so those lines always end in
 ```
 
 You can see both arrows in `syn_c`. Starting inside a comment, it looks for
-the end:
+the end (the second half is the same for a C++ raw string):
 
-`src/SYNTAX.C:200-209`
+`src/SYNTAX.C:404-422`
 ```c
     if (state == S_CCOMMENT) {
         for (j = 0; j + 1 < n && !(s[j] == '*' && s[j + 1] == '/'); j++)
@@ -1010,6 +1016,15 @@ the end:
         }
         paint(role, 0, j + 2, A_COMMENT);
         i = j + 2;
+    } else if (state >= S_RAW) {
+        if ((j = raw_end(s, n, 0, state)) < 0) {
+            paint(role, 0, n, A_STRING);
+            return state;
+        }
+        j = suffix(s, n, j);
+        paint(role, 0, j, A_STRING);
+        i = j;
+        first = 0;
     }
 ```
 
@@ -1031,9 +1046,9 @@ Call the state at the start of line `i` *s(i)*. The first line starts in
 This is a recurrence, like a sequence defined by a step function. DE keeps
 the values it has worked out in the array `hs` of the buffer: `hs[i]` is
 *s(i)*, known to be right for every `i < hvalid`. `buf_state(b, upto)`
-(`BUFFER.C:452`) extends the known part up to the line asked for:
+(`BUFFER.C:462`) extends the known part up to the line asked for:
 
-`src/BUFFER.C:469-484`
+`src/BUFFER.C:481-496`
 ```c
     for (i = b->hvalid; i <= upto;) {
         const Line *L = &b->ln[i - 1];
@@ -1094,21 +1109,67 @@ now (line 50 used to be line 49). `touched` is told so (`moved`) and keeps no
 old states at all.
 
 The three numbers `hvalid`, `hknown` and `hdirty` are the subtlest
-bookkeeping in DE. The test `buf_state_check` (`BUFFER.C:494`) works every
+bookkeeping in DE. The test `buf_state_check` (`BUFFER.C:506`) works every
 kept state out again from the top and compares; the random test calls it
-after every key.
+after every key, on a C file, a C++ file and a Pascal file.
+
+The state of line 0 is always `S_NORMAL`, and `buf_state` writes it every
+time (`BUFFER.C:478`). Before 0.7 it was written only when `hvalid` was 0,
+but `buf_load` sets `hvalid` to 1 itself, so `hs[0]` held whatever the
+memory held. In C only a stray 1 showed (the first line coloured as a
+comment); C++'s many states made any stray value show.
+
+### C++: a state that remembers a delimiter
+
+C++ has one more thing that crosses lines: a raw string, `R"x( ... )x"`.
+Nothing inside it is special (no `\` escapes, no comments), and only `)x"`,
+with the same delimiter `x`, ends it. A delimiter can be up to 16
+characters, so a line that ends inside a raw string must say *which*
+delimiter it waits for, and the state is one byte.
+
+DE gives each delimiter a number the first time it sees it (`raw_state`,
+`SYNTAX.C:320`): the empty delimiter is 0, the next one seen is 1, and so
+on, kept in a table for as long as DE runs. The state is `S_RAW` plus that
+number:
+
+```
+ auto s = R"x(one          ends in S_RAW + 1    ("x" got number 1)
+ two )" still              ends in S_RAW + 1    )" is not )x"
+ )x"; int k;               ends in S_NORMAL
+```
+
+Starting a line in such a state, `syn_c` looks for the end with `raw_end`
+(`SYNTAX.C:335`), as the code above shows. On the line where a raw string
+starts, `raw_open` (`SYNTAX.C:347`) checks that `R"` is followed by a
+delimiter and a `(`; if not, it is an ordinary string after a name `R`.
+
+Why numbers given out once, and not, say, a hash of the delimiter? The
+stop-early argument above needs *f*, the state after a line, to depend only
+on the line and the state before it. A number that never changes its
+meaning keeps that true: `S_RAW + 1` means "waiting for `)x"`" on every
+line, in every file, and when `buf_state_check` works it all out again from
+the top. A hash could give two delimiters the same state, and a line would
+then end a raw string it should not. The price is a fixed table: 256 states
+in a byte, less the four others, is room for 252 delimiters while DE runs.
+After that, a new one is taken as the empty delimiter.
+
+The C++ scanner is `syn_c` itself, with `cpp` set: C++'s word lists, raw
+strings, the prefixes of `u8"..."` and `L'x'`, suffixes such as `"x"s`
+(`suffix`, `SYNTAX.C:300`), and digit separators and exponent signs in
+numbers (`c_number`, `SYNTAX.C:279`). A `.C` file gets none of these.
 
 ### Finding keywords quickly: hash tables
 
 Every word on a line has to be looked up: is `while` a keyword, is `int` a
 type? Each language's word lists are written as one string with spaces
-around each word (`C_KEYWORDS`, `SYNTAX.C:187`). The first time a language
-is coloured, `word_role` (`SYNTAX.C:640`) puts all its words into one *hash
+around each word (`C_KEYWORDS`, `SYNTAX.C:370`; C++ has its own,
+`CPP_KEYWORDS`, `SYNTAX.C:384`). The first time a language
+is coloured, `word_role` (`SYNTAX.C:877`) puts all its words into one *hash
 table*.
 
 The hash function is FNV-1a:
 
-`src/SYNTAX.C:85-94`
+`src/SYNTAX.C:173-182`
 ```c
 static unsigned word_hash(const char *s, int n, int nocase)
 {
@@ -1141,10 +1202,24 @@ the hash and the comparison use upper case (`nocase`).
 
 ### Which language a file is
 
-`lang_of` (`SYNTAX.C:39`) decides from the name: `Makefile` or `.MAK` is
-Make, `.C .H .CPP ...` is C, and so on. The extension lists are strings like
-`" C H CPP "`, and `ext_is` looks for `" EXT "` in them, with the spaces, so
-`C` does not match inside `CPP`.
+`lang_of` (`SYNTAX.C:57`) decides from the name: `Makefile` or `.MAK` is
+Make, `.C` and `.H` are C, `.CPP .CXX .CC .HPP .HH .HXX` are C++, and so on.
+The extension lists are strings like `" C H "`, and `ext_is`
+(`SYNTAX.C:21`) looks for `" EXT "` in them, with the spaces, so `C` does
+not match inside `CC`. A file with no extension in a folder called `c++` or
+`cxx` is C++ too (`std_header`): that is where the C++ library's headers
+are, and `<vector>` is a file called `vector`.
+
+A `.H` file can be either. `lang_of_text` (`SYNTAX.C:111`) reads the first
+4 KB of the text for a clear sign of C++: a line that starts with `class `,
+`namespace `, `template` or `#include <name>` with no dot in the name, not
+inside a `/* */` comment. `buf_load` asks it with the file's bytes, and
+`buf_save` with the buffer's first lines (`lang_now`, `BUFFER.C:655`), so a
+new header becomes C++ when it is first saved with C++ in it.
+
+`lang_family` turns C++ into C where the two must work together: words from
+the other open files, Go to definition (a C++ program has C headers), F12 on
+`#include`, and Enter's indent after `{`.
 
 ### Why this way
 
@@ -1229,13 +1304,13 @@ with `left = 0`: `x = 200 >= 0 + 74`, so `left = 200 - 74 + 8 = 134`, and
 the cursor is at screen column `5 + 200 - 134 = 71`. Home then gives
 `x = 0 < 134`, so `left = 0`.
 
-PgDn moves both the cursor and `top` by `th - 1` lines (`EDITOR.C:660-661`),
+PgDn moves both the cursor and `top` by `th - 1` lines (`EDITOR.C:658-659`),
 so one line of the old page stays on screen as a reference. `center`
 (`EDITOR.C:204`) puts a line in the middle, for jumps.
 
 ### The scroll bar
 
-The scroll bar (`scrollbar`, `EDITOR.C:1713`) has an arrow at each end and
+The scroll bar (`scrollbar`, `EDITOR.C:1712`) has an arrow at each end and
 `th - 2` track cells between. The thumb's position on the track is
 
 ```
@@ -1243,7 +1318,7 @@ The scroll bar (`scrollbar`, `EDITOR.C:1713`) has an arrow at each end and
 ```
 
 a straight proportion: the first line gives 0, the last line gives `th - 3`.
-A click on the track does the inverse (`mouse_key`, `EDITOR.C:1508`):
+A click on the track does the inverse (`mouse_key`, `EDITOR.C:1507`):
 
 ```
  cy = floor( (r - TY - 1) * (n - 1) / (th - 3) )
@@ -1253,11 +1328,11 @@ where `r - TY - 1` is the track cell clicked.
 
 ### The row cache
 
-Most keys change one line or none. `cached_line` (`EDITOR.C:1675`) avoids
+Most keys change one line or none. `cached_line` (`EDITOR.C:1674`) avoids
 drawing a line again when nothing it depends on changed. It describes a line
 drawing by a key:
 
-`src/EDITOR.C:1668-1673`
+`src/EDITOR.C:1667-1672`
 ```c
 #define SLOTS 256
 #define COLS 132
@@ -1278,20 +1353,20 @@ This is *memoisation*: a function's answer is kept, indexed by its inputs.
 The stamp makes the key cheap: instead of comparing a line's text,
 `restamp` (`BUFFER.C:74`) gives the line a new number from a counter at
 every change, so "same stamp" means "same text". The `memset(&k, 0, ...)`
-at `EDITOR.C:1681` matters for this. A struct can have unused padding
+at `EDITOR.C:1680` matters for this. A struct can have unused padding
 bytes between its parts, and `memcmp` compares those too; zeroing the whole
 key first makes the padding the same every time.
 
 Two kinds of line are never cached: the cursor's line while a suggestion
 ghost shows on it, and every line on a screen so wide that the text
 area reaches past column 132, that is when `SC - 1 > 132`
-(`EDITOR.C:1700`). The test `ed_paint_check` (`EDITOR.C:1839`) draws the
+(`EDITOR.C:1699`). The test `ed_paint_check` (`EDITOR.C:1838`) draws the
 screen with the cache and again without it, and checks that both are the
 same.
 
 ### The status line
 
-`status_line` (`EDITOR.C:1726`) shows the first of these that applies:
+`status_line` (`EDITOR.C:1725`) shows the first of these that applies:
 
 1. a message from `ed_message` (until the next key);
 2. the suggestion Tab would take, with its signature from the reference;
@@ -1323,10 +1398,10 @@ status line can run that command.
 6. The main loop, then `theme_done` and `plat_done` to give the screen back.
 
 `DE /CHECK FILE` (`MAIN.C:27`) does steps 2 and 3, puts everything back,
-and writes `DE 0.6 ok` into FILE. It exists so that DOSDev's build can prove
+and writes `DE 0.7 ok` into FILE. It exists so that DOSDev's build can prove
 the `DE.EXE` it made starts, without a keyboard (`CONTRACT.md`).
 
-`DE /SPEED FILE` runs `ed_speed` (`EDITOR.C:1916`): it times drawing,
+`DE /SPEED FILE` runs `ed_speed` (`EDITOR.C:1915`): it times drawing,
 showing, moving and typing, each for about a second by the BIOS clock.
 
 `#ifndef DE_NO_MAIN` (`MAIN.C:10`, `MAIN.C:95`) leaves `main` out when the
@@ -1374,10 +1449,10 @@ label that shows the setting, such as `[x] Line numbers`, and the Window
 menu gets one item per open file. `menu_run` (`DIALOG.C:144`) returns the
 command number chosen, or `C_NONE`.
 
-**Commands.** Every action has a number in the `C_` list (`DE.H:293-302`).
-`ed_command` (`EDITOR.C:1328`) is one `switch` that carries them out. There
+**Commands.** Every action has a number in the `C_` list (`DE.H:301-310`).
+`ed_command` (`EDITOR.C:1327`) is one `switch` that carries them out. There
 are three ways to reach a command: a shortcut key (the table `shortcuts[]`,
-`EDITOR.C:1454`), a menu item, or a click on the status line. All three end
+`EDITOR.C:1453`), a menu item, or a click on the status line. All three end
 in `ed_command`, so a command behaves the same however it was chosen.
 `C_FILE1` must stay last in the list: `C_FILE1 + i` means "go to file i".
 
@@ -1387,16 +1462,16 @@ in `ed_command`, so a command behaves the same however it was chosen.
   selected at first ("fresh"), so typing replaces it.
 - `msg_box` (`DIALOG.C:361`): a message, wrapped by `wrap`, and buttons.
   Returns the button number, or -1 for Esc.
-- `open_box` (`DIALOG.C:506`): a name field and a folder list, with Tab
+- `open_box` (`DIALOG.C:485`): a name field and a folder list, with Tab
   between them.
-- `pick_run` (`DIALOG.C:667`): a list to pick from, used for the Messages
+- `pick_run` (`DIALOG.C:646`): a list to pick from, used for the Messages
   window, Go to symbol and Go to definition.
-- `busy_box` (`DIALOG.C:750`): "this takes a while", shown and not waited
+- `busy_box` (`DIALOG.C:729`): "this takes a while", shown and not waited
   on.
 
 `pick_run` is general because its caller passes in functions:
 
-`src/DE.H:314-320`
+`src/DE.H:322-328`
 ```c
 typedef struct {
     const char *title, *keys;
@@ -1410,8 +1485,8 @@ typedef struct {
 `count`, `item` and `info` are *function pointers*: variables that hold a
 function. `pick_run` calls `p->count(filter)` to know how many lines there
 are and `p->item(i, ...)` to get line `i`, without knowing whether they are
-messages or symbols. `msgs_list` (`PROJECT.C:828`) and `sym_list`
-(`SYMBOLS.C:366`) each fill in a `Pick` with their own functions.
+messages or symbols. `msgs_list` (`PROJECT.C:829`) and `sym_list`
+(`SYMBOLS.C:699`) each fill in a `Pick` with their own functions.
 
 ### 8.3 Suggestions and the built-in reference
 
@@ -1431,13 +1506,14 @@ after. Subtracting the old line's words and adding the new line's words
 keeps every count exact, whatever the change. `words_check`
 (`SUGGEST.C:216`) builds a fresh index and compares, for the tests.
 
-**Candidates and scores.** `sug_collect` (`SUGGEST.C:321`) gathers every
+**Candidates and scores.** `sug_collect` (`SUGGEST.C:339`) gathers every
 word that starts like the one being typed (ignoring case) and gives it a
 score:
 
 ```
  score(w) = 4 x (times w is in this file, not counting the word being typed)
-          + 2 x (times w is in the other open files of the same language)
+          + 2 x (times w is in the other open files of the same language;
+                 C and C++ count as one, lang_family)
           + 3 for each reference entry named w
           + 1 for each keyword list w is in
 ```
@@ -1446,45 +1522,57 @@ Sorting (`cand_cmp`, `SUGGEST.C:288`) adds 1000 to a word that starts with
 exactly what was typed, case included, then orders by score (highest
 first), then by length (shortest first), then alphabetically. For example,
 typing `pri` in a C file with no `pri...` words of your own: the reference
-has `printf` and `printw` (PDCurses), each scoring 3 + 1000, and the keyword
-list has `private` (a C++ word, 1 + 1000). `printf` and `printw` tie, and
+has `printf` and `printw` (PDCurses), each scoring 3 + 1000. They tie, and
 are the same length, so the alphabet decides: `printf`. The ghost shows
-`ntf`.
+`ntf`. (In a C++ file the keyword list adds `private`, 1 + 1000, which
+comes after them.)
+
+**After `std::`.** In a C++ file, `after_std` (`SUGGEST.C:323`) looks back
+from the word being typed for `std::`, or `std::chrono::` and the like. Then
+`sug_collect` takes only the reference's C++ entries: no words from the
+files, no keywords, no C entries. Ctrl+Space works there with nothing typed
+yet, so `std::` and Ctrl+Space lists every std name. After `name.` or
+`name->` nothing of the kind is tried: DE does not know `name`'s type.
 
 In languages where case does not matter, typing in capitals gives capitals:
-`WRITEL` suggests `WRITELN` (`SUGGEST.C:366-392`).
+`WRITEL` suggests `WRITELN` (`SUGGEST.C:389-415`).
 
 **When it is worked out.** Typing calls `sug_want`, which only notes the
 buffer. The work happens in `sug_refresh` when the screen is next drawn
-(`ed_paint` calls it first, `EDITOR.C:1797`). So keys typed faster than the
+(`ed_paint` calls it first, `EDITOR.C:1796`). So keys typed faster than the
 screen is drawn do not each look for a suggestion. If Tab arrives before the
-screen was drawn, `sug_take` works it out on the spot (`SUGGEST.C:455-456`).
+screen was drawn, `sug_take` works it out on the spot (`SUGGEST.C:478-479`).
 No suggestion is offered inside a comment or a string (`in_text`,
-`SUGGEST.C:403`, which colours the cursor's line to find out).
+`SUGGEST.C:426`, which colours the cursor's line to find out).
 
-**The call the cursor is in.** `sug_call` (`SUGGEST.C:476`) walks back from
+**The call the cursor is in.** `sug_call` (`SUGGEST.C:499`) walks back from
 the cursor, counting brackets and skipping quoted text, to the `(` that is
 not yet closed. The word before it is looked up in the reference, and the
 status line shows its signature.
 
-**The reference.** `REF.C` is one array, `refs[]`, of 373 entries:
-233 for C (with 53 for SDL3 and 51 for PDCurses among them), 77 for
-assembly, 39 for Pascal and 24 for BASIC. Each entry is a language, a name,
-where it comes from, how it is written, and what it does (`Ref`,
-`DE.H:176-182`). `ref_find` (`REF.C:412`) looks a name up by reading the
-array through; with a few hundred entries that is quick enough, and it keeps
-`REF.C` pure data. `help_lookup` (Ctrl+F1, `HELP.C:267`) shows the entry for
+**The reference.** `REF.C` is one array, `refs[]`, of 492 entries:
+233 for C (with 53 for SDL3 and 51 for PDCurses among them), 119 for C++,
+77 for assembly, 39 for Pascal and 24 for BASIC. Each entry is a language, a
+name, where it comes from, how it is written, and what it does (`Ref`,
+`DE.H:180-186`). A C++ class member is named with its class,
+`vector::push_back`; the `:` keeps it out of the suggestions (they offer
+words), and Ctrl+F1 on `push_back`, finding no entry by that name, lists the
+entries that contain it. `ref_find` (`REF.C:611`) looks a name up by reading
+the array through; with a few hundred entries that is quick enough, and it
+keeps `REF.C` pure data. A C++ file uses C's entries too (`ref_in`,
+`REF.C:603`): `ref_find` looks at C++'s first, then C's, so `sqrt` in a C++
+file is `<cmath>`'s, with its float and long double forms. `help_lookup` (Ctrl+F1, `HELP.C:268`) shows the entry for
 the word at the cursor, or the list searched for that word.
 
 ### 8.4 Symbols and Go to definition
 
 **The problem.** Jump to a function or label by name, without a compiler.
 
-**How.** `sym_scan` (`SYMBOLS.C:248`) reads a file line by line. It colours
+**How.** `sym_scan` (`SYMBOLS.C:573`) reads a file line by line. It colours
 each line first (`syn_line`, with the state carried along as in chapter 6),
 so it can skip comments and strings. Then it applies the shape rules of the
 language, which the comment at the top of `SYMBOLS.C` lists. For C,
-`c_line` (`SYMBOLS.C:70`) takes:
+`c_line` (`SYMBOLS.C:72`) takes:
 
 - `#define NAME`;
 - `struct`, `union` or `enum NAME` that is not a declaration ending in `;`;
@@ -1492,22 +1580,42 @@ language, which the comment at the top of `SYMBOLS.C` lists. For C,
 - a name followed by `(` at the start of a line that does not end in `;`
   or `,`, and is not `if`, `while`, `for`, `switch`, `return` or `sizeof`.
 
-Each symbol gets a kind letter: `f` function, `d` define, `t` type, `l`
-label, `v` data, `s` section.
+C++ needs more, because its definitions are indented inside namespaces and
+class bodies, and a method's name depends on the class it is in. For C++,
+`sym_scan` keeps a `CppScope` (`SYMBOLS.C:164`) from line to line: how many
+braces are open, and which of them opened a namespace, a class or an
+`extern "C"` block. `cpp_braces` (`SYMBOLS.C:439`) counts the braces of
+each line (only those coloured `A_SYMBOL`, so not in comments or strings,
+and not on `#` lines). A line is looked at only where a declaration can be:
+when the braces open are exactly those of the scopes, so never inside a
+function body. There `cpp_decl` (`SYMBOLS.C:345`) takes classes, structs,
+unions, enums, namespaces and `using NAME =`, and hands the rest to
+`cpp_function` (`SYMBOLS.C:257`). That finds the name before the `(` (or an
+`operator...`), walks back over `Foo<T>::` and `~`, and asks `has_body`
+(`SYMBOLS.C:208`) whether the `)` is followed by `{` before any `;` or `=`,
+looking up to eight lines on, so a parameter list may be split. The name
+gets the enclosing classes in front (`add_scoped`, `SYMBOLS.C:191`): `bar`
+in the body of `Foo` and `Foo::bar` outside it are both `Foo::bar`.
 
-**Ctrl+L** (`sym_list`, `SYMBOLS.C:366`) shows the symbols in a `Pick`
+Each symbol gets a kind letter: `f` function, `d` define, `t` type, `l`
+label, `v` data, `s` section, `n` namespace.
+
+**Ctrl+L** (`sym_list`, `SYMBOLS.C:699`) shows the symbols in a `Pick`
 list. Typing filters it.
 
-**F12** (`sym_definition`, `SYMBOLS.C:588`):
+**F12** (`sym_definition`, `SYMBOLS.C:931`):
 
 1. On an `#include` line (or `%include`, or Pascal's `{$I ...}`), open that
-   file. `find_include` (`SYMBOLS.C:502`) looks in the file's folder, the
+   file. `find_include` (`SYMBOLS.C:835`) looks in the file's folder, the
    project's folder, each `LIBS/NAME/INCLUDE`, the folders on `INCLUDE`,
-   and `DJDIR/include`, in that order.
+   and `DJDIR/include`, in that order; for C++ also each folder in
+   `DJDIR/include/cxx`, where DJGPP keeps `<vector>` and the rest.
 2. Otherwise, look for definitions of the word at the cursor in this file,
-   in the other open files of the same language, then in the project's files
-   on disk (`defs_walk`, `SYMBOLS.C:448`: up to 3 folders deep, 1,000
-   files, files under 1 MB).
+   in the other open files of the same language (C and C++ count as one),
+   then in the project's files on disk (`defs_walk`, `SYMBOLS.C:781`: up to
+   3 folders deep, 1,000 files, files under 1 MB). A C++ name matches by
+   its last part too (`last_part`, `SYMBOLS.C:683`): `bar` finds
+   `Foo::bar`.
 3. One found: go there. Several: a list. None: show the reference entry, if
    there is one.
 
@@ -1516,17 +1624,19 @@ places, so Alt+Left (`ed_back`) can come back.
 
 ### 8.5 Projects, building, running and compiler messages
 
-**Finding the project.** `proj_find` (`PROJECT.C:149`) looks for
+**Finding the project.** `proj_find` (`PROJECT.C:138`) looks for
 `project.ini` (DOSDev's project file) from the file's folder upwards. The
 build command is chosen in this order:
 
 1. a command set in Project > Commands, until DE ends (`over[]`);
 2. `build =` from `project.ini`, if `build_on = dos`;
 3. `BUILD.BAT` in the project's folder;
-4. nothing: F9 then asks, offering a guess (`guess`, `PROJECT.C:190`), such
-   as `gcc -Wall -g -o HELLO.EXE -x c HELLO.C`.
+4. nothing: F9 then asks, offering a guess (`guess`, `PROJECT.C:179`), such
+   as `gcc -Wall -g -o HELLO.EXE -x c HELLO.C`, or for C++
+   `gpp -Wall -g -o HELLO.EXE -x c++ HELLO.CPP` (`gpp` is DJGPP's g++; GCC
+   takes `.CC` and `.CXX` for C++ only in lower case, hence `-x c++`).
 
-**Building.** `proj_build` (`PROJECT.C:374`):
+**Building.** `proj_build` (`PROJECT.C:358`):
 
 ```
  save every changed file (ed_save_all)      -- stop if any can't be saved
@@ -1539,7 +1649,7 @@ build command is chosen in this order:
  otherwise "Built ...", then run or debug if asked
 ```
 
-`up_to_date` (`PROJECT.C:287`) compares the time of the program named by
+`up_to_date` (`PROJECT.C:284`) compares the time of the program named by
 `output =` with the newest source file (or `.BAT` or `.INI` file) in the
 project (`newest`, up to 3 folders deep).
 
@@ -1550,13 +1660,14 @@ descriptors 1 and 2) at the log file with `dup2`, runs the command with
 `busy_box` stays up.
 
 **Reading compiler messages.** Every compiler says "error at line 12" in its
-own way. `msg_parse` (`PROJECT.C:531`) knows three shapes:
+own way. `msg_parse` (`PROJECT.C:516`) knows three shapes:
 
-`src/PROJECT.C:523-530`
+`src/PROJECT.C:507-515`
 ```c
 /* One line of a compiler's output: is it an error, a warning ..., and where?
  * Returns 1 with the file, line and column (0: none) when it says where.
  *   GCC, NASM:            MAIN.C:12:5: error: expected ';' before '}' token
+ *   G++, on templates:    MAIN.CPP:7:24:   required from here       (a note)
  *   Open Watcom:          MAIN.C(12): Error! E1009: Expecting ';' but found '}'
  *   Free Pascal:          MAIN.PAS(12,5) Error: Identifier not found "X"
  *   Turbo Pascal:         MAIN.PAS(12): Error 3: Unknown identifier.
@@ -1566,23 +1677,33 @@ own way. `msg_parse` (`PROJECT.C:531`) knows three shapes:
 
 - the kind first (`Error FILE LINE:`), Turbo C's way;
 - `FILE(LINE)` or `FILE(LINE,COL)`, then the kind;
-- `FILE:LINE:` or `FILE:LINE:COL:`, then the kind and a colon.
+- `FILE:LINE:` or `FILE:LINE:COL:`, then the kind and a colon; or, from
+  g++ after an error in a template, `required from here` (or `required
+  from ...`, `required by ...`), which is a note: the place where your code
+  used the template.
 
-The file must look like a source file (`is_source`, `PROJECT.C:83`), so that
+Two more things come from GCC 9 and later. Under each message they show the
+source line, as `   12 |     x = y;`, with a line of `^` under it. Those
+lines are text, whatever they say: a C label `error:` in them would
+otherwise count as an error (`PROJECT.C:526-533`). And g++ points into the
+C++ library's headers, which have no extension (`.../cxx/9/vector`) or end
+in `.tcc`.
+
+The file must look like a source file (`is_source`, `PROJECT.C:69`), so that
 a line such as `make: *** ...` is not taken for a place. A drive letter's
 colon (`C:\`) is skipped first. A line that says where nothing is, but has
 `error:` or `undefined reference` in it, still counts as an error. Every
 message that says where is shown the same way, whichever compiler said it:
-`FILE(LINE): text` (`PROJECT.C:755`).
+`FILE(LINE): text` (`PROJECT.C:756`).
 
 **The messages.** They are kept in a fixed array, `msgs[2000]`
-(`PROJECT.C:621`). Each `Msg` (`DE.H:213-219`) points at the open buffer
+(`PROJECT.C:622`). Each `Msg` (`DE.H:218-224`) points at the open buffer
 it belongs to, if the file is open. The line number moves with the text:
 when lines are inserted or deleted, `BUFFER.C` calls `msgs_shift`
-(`PROJECT.C:696`). `msgs_marks` gives `ed_paint` the worst message on each
+(`PROJECT.C:697`). `msgs_marks` gives `ed_paint` the worst message on each
 visible line, for the error and warning colours in the gutter.
 
-F8 and Shift+F8 (`msgs_next`, `PROJECT.C:790`) go round the messages that
+F8 and Shift+F8 (`msgs_next`, `PROJECT.C:791`) go round the messages that
 say where, with modular arithmetic:
 
 ```
@@ -1592,7 +1713,7 @@ say where, with modular arithmetic:
 Adding `2 * nmsgs` keeps the number positive before `%`, because in C the
 remainder of a negative number is negative.
 
-**Find in files** (`find_in_files`, `PROJECT.C:986`) walks the project's
+**Find in files** (`find_in_files`, `PROJECT.C:979`) walks the project's
 folders (4 deep, leaving `LIBS` out), reads each text file, and adds each
 match as a message of kind `M_FOUND`. For a file that is open, it searches
 the buffer instead, so unsaved changes are found too. Lower case finds any
@@ -1642,7 +1763,7 @@ size, and notice any files the program changed.
   `0xFF`, which no real cell matches, so the next `plat_show` writes every
   row.
 
-In `PROJECT.C`, `run_cmd` (`PROJECT.C:319`) changes to the project's folder,
+In `PROJECT.C`, `run_cmd` (`PROJECT.C:316`) changes to the project's folder,
 calls `plat_exec`, changes back, remakes the screen array if the size
 changed (`scr_init`), says how the program ended, and calls `ed_check_disk`.
 
@@ -1690,14 +1811,14 @@ static void index_manual(void)
 }
 ```
 
-`DE.TXT` has 16 topics. `help_manual` (`HELP.C:59`) shows the contents (the
+`DE.TXT` has 17 topics. `help_manual` (`HELP.C:59`) shows the contents (the
 introduction's first paragraph, then the topics), then one topic at a time,
 with Left and Right for the topic before and after.
 
 **Why.** The manual is compiled into the program, so `DE.EXE` alone is
 complete. Writing the manual as plain text with underlined headings keeps it
 readable as a file too, and the same convention lets Ctrl+L list a text
-file's headings (`sym_scan`, `SYMBOLS.C:288-290`).
+file's headings (`sym_scan`, `SYMBOLS.C:622-624`).
 
 ### 8.8 When memory runs out
 
@@ -1728,7 +1849,7 @@ allocation. When `realloc` fails, `out_of_memory` (`BUFFER.C:13`) runs:
    `buf_new`), so that opening and writing files has memory to work with.
 2. `plat_done` gives the screen back to DOS, so the messages can be read.
 3. `ed_emergency_save` (`EDITOR.C:336`) writes each file with unsaved
-   changes with `buf_emergency` (`BUFFER.C:687`): as `NAME.SAV` next to the
+   changes with `buf_emergency` (`BUFFER.C:717`): as `NAME.SAV` next to the
    original, or `UNTITLnn.SAV` for a file with no name. A name already there
    is never written over: `.SA0` to `.SA9` are tried next.
 4. It prints where each file went, then `DE: out of memory`, and ends with
@@ -1744,7 +1865,7 @@ itself, and the `shown` copy of the screen in `take_screen`, without which
 **Prevention.** `buf_load` refuses a file over 16 MB (`DE_MAX_FILE`) before
 reading it, and leaves everything as it was.
 
-**The test.** `test_big_and_memory` (`DETEST.C:1349`) runs the editor in a
+**The test.** `test_big_and_memory` (`DETEST.C:1708`) runs the editor in a
 child process (`fork`), sets `de_fail_alloc = 1` so the next `xrealloc`
 fails, and then checks the exit code and every `.SAV` file.
 
@@ -1767,7 +1888,7 @@ fails, and then checks the exit code and every `.SAV` file.
 3. It runs the result in a temporary folder, and removes the folder.
 
 The program prints each group's name, any failures, and a count at the end
-(253 checks at `5f6fe6a`, all passing).
+(328 checks at `de7dfe5`, all passing; DE 0.6 had 253).
 
 ### How a test drives the editor
 
@@ -1848,18 +1969,22 @@ the text starts at column 5.
 Some functions exist only for the tests. Each checks something DE keeps
 against the text itself, most by working it out again from scratch:
 
-- `buf_check` (`BUFFER.C:432`): every line is sound, the cursor is inside
+- `buf_check` (`BUFFER.C:442`): every line is sound, the cursor is inside
   the text.
 - `words_check` (`SUGGEST.C:216`): the word index matches the text.
-- `buf_state_check` (`BUFFER.C:494`): every kept syntax state is right.
-- `ed_paint_check` (`EDITOR.C:1839`): the screen drawn with the row cache is
+- `buf_state_check` (`BUFFER.C:506`): every kept syntax state is right.
+- `ed_paint_check` (`EDITOR.C:1838`): the screen drawn with the row cache is
   the same as without it.
 
-`test_random` (`DETEST.C:1003`) plays 40 rounds of 600 random keys from a
-pool. After each key it runs `buf_check`, `words_check` and
-`buf_state_check` (and `ed_paint_check` after every third key); at the end
-of a round it undoes everything and redoes everything. A fixed seed
-(`srand(1234)`) makes it repeatable.
+`test_random` (`DETEST.C:1424`) plays 40 rounds of 600 random keys from a
+pool on a C file, then 20 rounds on a C++ file with raw strings and comments
+over lines, and 20 on a Pascal file with both of its comments; the C++ and
+Pascal rounds add keys of their own to the pool (`R`, `"`, `(` and `)`;
+`{`, `}`, `(*` and `*)`). `random_rounds` (`DETEST.C:1344`) does the work.
+After each key it runs `buf_check`, `words_check` and `buf_state_check`
+(and `ed_paint_check` after every third key); at the end of a round it
+undoes everything and redoes everything. A fixed seed (`srand(1234)`) makes
+it repeatable, and the C rounds are the same keys as before 0.7.
 
 ### Adding a test
 
@@ -1877,7 +2002,7 @@ of a round it undoes everything and redoes everything. A fixed seed
    }
    ```
 
-2. Call it from `main` (`DETEST.C:1479`), before `test_random()`.
+2. Call it from `main` (`DETEST.C:1838`), before `test_random()`.
 3. Run `make test`. Write the check first and see it fail, then change the
    code and see it pass: then you know the test really tests the change.
 
@@ -1894,7 +2019,8 @@ easy to harder. Run `make test` after each.
 
 ### Exercise 1: add an entry to the reference
 
-`hypot(x, y)`, the length of the vector (x, y), is not in the reference.
+`hypot(x, y)`, the length of the vector (x, y), is not in the C reference.
+(The C++ reference has `std::hypot`, `REF.C:429`; a C file does not see it.)
 
 - **Change:** `refs[]` in `REF.C`. Add a line after the `fmod` entry
   (`REF.C:107`), in the same form as the others:
@@ -1908,7 +2034,7 @@ easy to harder. Run `make test` after each.
 
 C11's `_Noreturn` is not coloured as a keyword.
 
-- **Change:** add ` _Noreturn` to the string `C_KEYWORDS` (`SYNTAX.C:187`).
+- **Change:** add ` _Noreturn` to the string `C_KEYWORDS` (`SYNTAX.C:370`).
   Keep a space on each side of every word in the string; `keys_add` splits
   on spaces.
 - **Test:** in `test_brackets_and_colours`, write a file and check the
@@ -1922,7 +2048,7 @@ C11's `_Noreturn` is not coloured as a keyword.
   ```
 
 - **Notice:** suggestions offer the new keyword too, because `lang_lists`
-  (`SYNTAX.C:686`) hands the same strings to `SUGGEST.C`.
+  (`SYNTAX.C:924`) hands the same strings to `SUGGEST.C`.
 
 ### Exercise 3: a new colour role
 
@@ -1934,7 +2060,7 @@ own role.
   2. `SCREEN.C:21-30`: add an attribute at the end of each of the three rows
      of `rows`, for example `0x12` (green on blue). Update the column
      comments above them.
-  3. `syn_asm` (`SYNTAX.C:315`): paint labels with `A_LABEL`.
+  3. `syn_asm` (`SYNTAX.C:547`): paint labels with `A_LABEL`.
 - **Test:** the existing check "asm: a label" (`DETEST.C:395`) now fails,
   which is right: change it to `A_LABEL`.
 - **Notice:** if you forget step 2, the program still compiles. C fills
@@ -1947,12 +2073,12 @@ own role.
 Add Edit > Uppercase, which makes the selected text upper case.
 
 - **Change:**
-  1. `DE.H:293-302`: add `C_UPPER` before `C_FILE1` (which must stay last).
+  1. `DE.H:301-310`: add `C_UPPER` before `C_FILE1` (which must stay last).
   2. `m_edit` (`DIALOG.C:23`): add `{ "Upperca~s~e", "", C_UPPER },`. The
      letter `S` is not yet a hot key in that menu.
   3. `EDITOR.C`: write the function, above `ed_command`, and add
      `case C_UPPER: upper_case(b); break;` to `ed_command`
-     (`EDITOR.C:1328`).
+     (`EDITOR.C:1327`).
 
   ```c
   static void upper_case(Buffer *b)
@@ -1996,12 +2122,12 @@ Add Edit > Uppercase, which makes the selected text upper case.
 Make Ctrl+J join the next line onto this one, with one space between.
 
 - **Check first** that the key is free: Ctrl+J is not in `shortcuts[]`
-  (`EDITOR.C:1454`), and `translate` (`DOS.C:368`) does deliver it as
+  (`EDITOR.C:1453`), and `translate` (`DOS.C:368`) does deliver it as
   `KM_CTRL | 'J'` (the BIOS gives character 10 with the J key's scan code,
   not Enter's).
 - **Change:** write `join_lines` in `EDITOR.C`, and add
   `case KM_CTRL | 'J': join_lines(b); break;` to the `switch` in `ed_key`
-  (`EDITOR.C:1597`).
+  (`EDITOR.C:1596`).
 
   ```c
   static void join_lines(Buffer *b)
@@ -2037,17 +2163,20 @@ FreeBASIC has block comments, `/' ... '/`, which can cross lines. BASIC in DE
 has no state yet (`syn_basic` takes none).
 
 - **Change, in `SYNTAX.C`:**
-  1. Add a state `S_BCOMMENT` to the `enum` at `SYNTAX.C:11`.
-  2. Give `syn_basic` (`SYNTAX.C:402`) a `state` parameter, as
-     `syn_pascal` has, and pass it in `syn_line` (`SYNTAX.C:676`).
+  1. Add a state `S_BCOMMENT` to the `enum` at `SYNTAX.C:13`, before
+     `S_RAW`, which must stay last: the raw-string states are the numbers
+     from `S_RAW` up, and `RAW_ROOM` (`SYNTAX.C:316`) makes room for one
+     delimiter less by itself.
+  2. Give `syn_basic` (`SYNTAX.C:634`) a `state` parameter, as
+     `syn_pascal` has, and pass it in `syn_line` (`SYNTAX.C:914`).
   3. At the start of `syn_basic`: if `state == S_BCOMMENT`, look for `'/`.
      If it is not on the line, paint the whole line `A_COMMENT` and return
      `S_BCOMMENT`. If it is, paint up to and including it, and carry on
      from there.
   4. In the loop, check for `/'` *before* the existing check for `'`
-     (`SYNTAX.C:407`), because `'` alone already starts a comment to the
+     (`SYNTAX.C:639`), because `'` alone already starts a comment to the
      end of the line. On `/'`, look for `'/` the same way.
-  `syn_pascal` (`SYNTAX.C:337`) is a good model for both steps.
+  `syn_pascal` (`SYNTAX.C:569`) is a good model for both steps.
 - **Test:** in `test_brackets_and_colours`:
 
   ```c
@@ -2062,10 +2191,11 @@ has no state yet (`syn_basic` takes none).
   (chapter 6), suggestions ("no suggestions in a comment") and symbols
   ("skip comment lines") all follow, because they all go through
   `syn_line`. The state is stored in one `unsigned char` per line, so there
-  is room for 256 states.
-- **Harder still:** the random test only edits a C file (`RAND.C`). Make it
-  also run some rounds on a `.BAS` file, so `buf_state_check` covers the new
-  state.
+  is room for 256 states, and C++'s raw strings use most of them.
+- **Harder still:** the random test edits a C, a C++ and a Pascal file. Add
+  a call to `random_rounds` in `test_random` (`DETEST.C:1424`) for a `.BAS`
+  file that starts with a `/' ... '/` comment over two lines, with `/` and
+  `'` among its extra keys, so `buf_state_check` covers the new state.
 
 ---
 
@@ -2126,6 +2256,10 @@ for key modifiers and screen cells.
 **Hash table.** A table where an item's place is computed from the item
 itself, by a hash function. Finding an item then takes about one look, not a
 search through everything.
+
+**Raw string (C++).** A string literal written `R"x( ... )x"`, in which
+nothing is special, not even `\` or a line break, until `)x"`. Handy for
+text with many quotes or backslashes in it.
 
 **Recurrence.** A sequence where each value is computed from the one before.
 The syntax states are one: the state after a line comes from the line and
@@ -2201,68 +2335,52 @@ where logic is repeated, or where there are limits a reader should know
 about. They were found while writing this tour, and each was checked in the
 code.
 
-### A behaviour that looks wrong
+### What 0.7 put right
 
-- **"Keep mine" after a run remembers the time but not the size.** In
-  `ed_check_disk`, answering Keep mine updates only `disk_time`
-  (`EDITOR.C:449-451`). But `buf_changed_on_disk` compares the size as well
-  (`BUFFER.C:428`). So if the other program also changed the file's size,
-  DE asks again the next time it comes back from a run, although the comment
-  says "not asked again for this change". The test "it is not asked again for
-  the same change" (`DETEST.C:1310`) passes only because the run writes
-  `again\n`, the same size as the `fresh\n` that was there before. Setting
-  `disk_size` there as well (with the same `file_size` that `buf_save`
-  uses) would make the two agree.
+The first edition of this tour listed these, and DE 0.7 changed them:
 
-### Comments that are out of date
-
-- `SCREEN.C:32-33` says the palettes "must match program/src/theme.rs;
-  programs/de-test/run.sh checks". Those are paths in DOSDev's repository,
-  and `CHANGELOG.md` (0.6) says that check is no longer here.
-- `DIALOG.C:1` says the file holds "the help screen". The help viewer is in
-  `HELP.C`.
-- The comment above `newest` (`PROJECT.C:260`) describes `up_to_date`, the
-  function after it.
-
-### Code that is never used
-
-- `proj_run` (`PROJECT.C:361`, declared at `DE.H:229`) is never called.
-  Ctrl+F9 goes through `proj_build(1)`.
+- **Keep mine after a run** now takes the file's size as well as its time
+  (`buf_disk_seen`, `BUFFER.C:434`, called at `EDITOR.C:449`), so DE does
+  not ask again about a change that also changed the size. The test runs a
+  program that writes a file of another size (`DETEST.C:1663`).
+- **The first line's syntax state** is written every time (chapter 6).
+- **Out-of-date comments** in `SCREEN.C`, `DIALOG.C` and above `newest` in
+  `PROJECT.C` now say what is true.
+- **`proj_run`**, which nothing called, is gone.
+- **Things written twice that one can call:** the Open dialog uses
+  `PROJECT.C`'s `path_join` and `is_dir` (`PROJECT.C:29`, `PROJECT.C:62`);
+  `PROJECT.C` uses `SYNTAX.C`'s `ext_is` (`SYNTAX.C:21`); Find in files
+  uses the editor's `has_upper` (`EDITOR.C:1101`); Go to symbol uses
+  `HELP.C`'s `has_text` (`HELP.C:181`).
+- **C's keywords** no longer include C++'s; C++ has a language of its own.
+- **The random test** now edits C++ and Pascal files too.
 
 ### The same thing written twice
 
 None of these is wrong, but a change to one must be made to the other by
-hand:
+hand. They are larger than the ones 0.7 joined, and are meant to move into
+a toolkit DE shares with other programs:
 
-- `join` exists twice, with different behaviour: `DIALOG.C:431` (always joins,
-  cuts to `DE_PATH`) and `PROJECT.C:27` (passes an absolute `name` through
-  unchanged).
-- `is_dir`: `DIALOG.C:445` and `PROJECT.C:60`.
-- Extension lists: `ext_is` (`SYNTAX.C:17`) and `ext_in` (`PROJECT.C:66`) do
-  the same job, and the source extensions in `lang_of` (`SYNTAX.C:47-60`)
-  are repeated in `is_source` (`PROJECT.C:90`). A new language's extension
-  must be added in both, or its compiler messages will not be recognised.
-- "Does it contain a capital?": `has_upper` (`EDITOR.C:1102`) and
-  `has_capital` (`PROJECT.C:978`).
-- Case-insensitive "contains": `has_text` (`HELP.C:180`) and `contains`
-  (`SYMBOLS.C:320`) are the same function.
-- The list window: `window` (`DIALOG.C:651`) and `page` (`HELP.C:43`) are
+- The source extensions in `lang_of` (`SYNTAX.C:57-81`) are repeated in
+  `is_source` (`PROJECT.C:69-80`). A new language's extension must be added
+  in both, or its compiler messages will not be recognised.
+- The list window: `window` (`DIALOG.C:630`) and `page` (`HELP.C:43`) are
   almost the same.
-- The FNV-1a hash: `word_hash` (`SYNTAX.C:85`) and `hash` (`SUGGEST.C:64`).
+- The FNV-1a hash: `word_hash` (`SYNTAX.C:173`) and `hash` (`SUGGEST.C:64`).
 - `SYNTAX.C` has two hash tables of words: `WordSet` with `in_list`
-  (`SYNTAX.C:79-157`), used only to recognise `rem`, and `KeyTable` with
-  `word_role` (`SYNTAX.C:573-667`), used for everything else.
-- Taking the extension off a name: `temp_name` (`BUFFER.C:594`) and
-  `buf_emergency` (`BUFFER.C:687`).
+  (`SYNTAX.C:167-245`), used only to recognise `rem`, and `KeyTable` with
+  `word_role` (`SYNTAX.C:805-904`), used for everything else.
+- Taking the extension off a name: `temp_name` (`BUFFER.C:607`) and
+  `buf_emergency` (`BUFFER.C:717`).
 - The word at the cursor: `ed_word` (`EDITOR.C:301`) and the start of
-  `help_lookup` (`HELP.C:267`).
-- The cursor's place on the screen: `ed_cursor` (`EDITOR.C:1854`) and the
-  first lines of `ed_draw` (`EDITOR.C:1872`).
+  `help_lookup` (`HELP.C:268`).
+- The cursor's place on the screen: `ed_cursor` (`EDITOR.C:1853`) and the
+  first lines of `ed_draw` (`EDITOR.C:1871`).
 - Keeping the cursor inside the text: `sane` (`EDITOR.C:150`), the start of
   `follow` (`EDITOR.C:191-194`) and `edit_end` (`EDITOR.C:175`).
-- Two "save all"s: File > Save all (`C_SAVEALL`, `EDITOR.C:1342`) asks for a
+- Two "save all"s: File > Save all (`C_SAVEALL`, `EDITOR.C:1341`) asks for a
   name for untitled files and stops at the first failure, while
-  `ed_save_all` (`EDITOR.C:509`, used before a build) skips untitled files
+  `ed_save_all` (`EDITOR.C:507`, used before a build) skips untitled files
   and goes on. `C_SAVEALL` also does not make the file being saved the
   current one, so its Save dialog can appear over a different file.
 
@@ -2270,11 +2388,11 @@ hand:
 
 - Two different types are called `Entry`: the word index entry
   (`SUGGEST.C:82`) and the Open dialog's folder entry (`DIALOG.C:413`). Two
-  `static` functions are called `add` (`SUGGEST.C:250`, `SYMBOLS.C:49`) and
-  two `number` (`SYNTAX.C:168`, `PROJECT.C:491`). This is legal, because
+  `static` functions are called `add` (`SUGGEST.C:250`, `SYMBOLS.C:51`) and
+  two `number` (`SYNTAX.C:256`, `PROJECT.C:475`). This is legal, because
   `static` keeps each private to its file, but a search finds both.
 - The current buffer has two macro names: `B` (`EDITOR.C:23`) and `B_CUR`
-  (`DE.H:259`). `TH()` (`EDITOR.C:25`) is a function, though its capitals
+  (`DE.H:266`). `TH()` (`EDITOR.C:25`) is a function, though its capitals
   make it look like a macro.
 
 ### Code that is clever where it could be plain
@@ -2283,7 +2401,7 @@ hand:
   last item and then steps forward one (wrapping to the first); End sets it
   to the first and steps back one. It works, but it is not obvious.
 - **The syntax state bookkeeping** (`touched` and `buf_state`,
-  `BUFFER.C:106-116` and `BUFFER.C:452-491`) uses three numbers whose
+  `BUFFER.C:106-116` and `BUFFER.C:462-503`) uses three numbers whose
   meanings interact. Chapter 6 explains them; the code's comments are
   short. The part that reuses old states after an edit is guarded only by
   the random test, through `buf_state_check`, and that test edits only a C
@@ -2303,7 +2421,7 @@ hand:
   reads up to 1,000 files, 3 folders deep. Build and run commands hold 159
   characters.
 - **Wide screens.** The row cache holds 132 columns (`COLS`,
-  `EDITOR.C:1669`). On a screen more than 133 columns wide every line is
+  `EDITOR.C:1668`). On a screen more than 133 columns wide every line is
   drawn every time, which is correct but slower. The saved DOS screen holds
   at most 132 by 60 cells (`MAXCELLS`, `DOS.C:26`); a bigger one is not
   saved, and DE clears the screen instead of putting it back
@@ -2315,14 +2433,28 @@ hand:
   (`pr`, `pri`, `prin` ...) as an entry along the way. Both are reset only
   when the file is read again (and the word index also when Save as changes
   the file's language).
-- **Syntax colouring is by scanning, not parsing.** Only block comments
-  carry a state from line to line. A C string or `//` comment continued
-  with a backslash at the end of the line is not followed onto the next line.
-  A Pascal `{$ ... }` directive that crosses a line break is not either. C's
-  keyword list also contains C++ words (`class`, `new`, `delete`), so they
-  are coloured in C files too.
+- **Syntax colouring is by scanning, not parsing.** Only block comments and
+  C++ raw strings carry a state from line to line. A C string or `//`
+  comment continued with a backslash at the end of the line is not followed
+  onto the next line. A Pascal `{$ ... }` directive that crosses a line
+  break is not either. C++'s `override` and `final` are coloured as keywords
+  everywhere, though they are keywords only in some places.
+- **Raw-string delimiters are never forgotten.** `raw_delim`
+  (`SYNTAX.C:317`) has room for 252 while DE runs; after that a new
+  delimiter is taken as the empty one, and such a string may end too early
+  on the screen. The table is shared by every file, which is what keeps a
+  state's meaning fixed (chapter 6).
+- **A `.H` file's language** is decided when it is read and when it is
+  saved, from its first 4 KB, not as you type.
+- **C++ symbols are a guess too.** `cpp_scan`'s brace count is put out for
+  the rest of the file by a macro that opens or closes a brace, or by `#if`
+  branches that each open one. A macro in a declaration (`class EXPORT Foo`,
+  `DECLARE(x)` with no `;` after it) is missed or taken for a function. A
+  function's name must be on the line with its `(`. A specialisation,
+  `class Foo<int> {`, is not listed, and names are not written with their
+  namespace. The manual's C and C++ topic says the same for the user.
 - **Messages and inserted lines.** `msgs_shift` moves messages on lines
-  *after* the changed line (`PROJECT.C:702`). A message on the very line
+  *after* the changed line (`PROJECT.C:703`). A message on the very line
   where Enter is pressed stays on that line, even if its text moved down.
 - **Running out of memory inside a multi-line insert.** `raw_insert` opens
   the gap in the line array (`BUFFER.C:188-189`) before it fills the new
@@ -2331,11 +2463,11 @@ hand:
   line (kept in `tail`) has not been put back. The emergency `.SAV` file is
   then written from that state, and may show a few lines twice or miss the
   end of one line. `write_lines` already copes with lines whose text is
-  `NULL` (`BUFFER.C:621`), so this does not crash.
+  `NULL` (`BUFFER.C:634`), so this does not crash.
 - **Comparing pointers that may be `NULL`.** Several places find the last
   `/` or `\` in a path and pick the later one with a test such as
-  `if (sep2 > sep)` (`BUFFER.C:600`, `BUFFER.C:698`, `SYNTAX.C:23`, `PROJECT.C:41`,
-  `SYMBOLS.C:513`), where either may be `NULL`. Standard C only defines `<`
+  `if (sep2 > sep)` (`BUFFER.C:613`, `BUFFER.C:728`, `SYNTAX.C:27`, `PROJECT.C:43`,
+  `SYMBOLS.C:846`), where either may be `NULL`. Standard C only defines `<`
   and `>` between pointers into the same array, so this is technically
   undefined behaviour. It works with GCC on a flat address space, which is
   all DE runs on.
@@ -2344,7 +2476,7 @@ hand:
 - **What the tests do not cover.** `DOS.C` is only type-checked, so key
   translation, the mouse, the palette and running programs are tested only
   by using DE. The tests write their options file to a fixed path,
-  `/tmp/DE-test.CFG` (`DETEST.C:1485`), and `run.sh` uses `set -e`, so a
+  `/tmp/DE-test.CFG` (`DETEST.C:1844`), and `run.sh` uses `set -e`, so a
   failing run leaves its temporary folder behind.
 - **`MANUAL.H` must follow `DE.TXT`.** Building with `BUILD.BAT` uses the
   `src/MANUAL.H` that is in the folder. If `DE.TXT` was edited and `make` was
