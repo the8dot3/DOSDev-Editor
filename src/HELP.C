@@ -177,7 +177,8 @@ void help_entry(const Ref *r0)
     }
 }
 
-static int has_text(const char *s, const char *f)
+/* Is f in s, in any case? An empty f is in everything. Ctrl+L uses this too. */
+int has_text(const char *s, const char *f)
 {
     int n = (int)strlen(f), i, k;
     for (i = 0; s[i]; i++) {

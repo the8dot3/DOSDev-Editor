@@ -317,25 +317,12 @@ static const char *kind_name(char kind)
 static Sym syms[MAXSYMS];
 static int nsyms, shown[MAXSYMS], nshown;
 
-static int contains(const char *s, const char *f)
-{
-    int n = (int)strlen(f), i, k;
-    for (i = 0; s[i]; i++) {
-        for (k = 0; k < n && s[i + k]; k++)
-            if (tolower((unsigned char)s[i + k]) != tolower((unsigned char)f[k]))
-                break;
-        if (k == n)
-            return 1;
-    }
-    return n == 0;
-}
-
 static int sym_count(const char *f)
 {
     int i;
     nshown = 0;
     for (i = 0; i < nsyms; i++)
-        if (contains(syms[i].name, f))
+        if (has_text(syms[i].name, f))
             shown[nshown++] = i;
     return nshown;
 }

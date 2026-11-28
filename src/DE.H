@@ -256,6 +256,7 @@ void help_manual(void);                          /* F1 */
 void help_reference(const char *filter);         /* Shift+F1 */
 void help_lookup(Buffer *b);                     /* Ctrl+F1 */
 void help_entry(const Ref *r);                   /* one entry */
+int  has_text(const char *s, const char *f);      /* f in s, any case */
 
 /* ---- the editor: EDITOR.C ------------------------------------------------ */
 #define B_CUR (files[cur])     /* the file being edited */
