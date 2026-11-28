@@ -202,6 +202,7 @@ const char *sug_ghost(const Buffer *b, const Ref **ref);   /* the ghost at the c
 int  sug_take(Buffer *b);                        /* Tab: take the ghost */
 void sug_popup(Buffer *b);                       /* Ctrl+Space: the list */
 const Ref *sug_call(const Buffer *b);            /* the call the cursor is in */
+int  after_member(const Buffer *b, int start);   /* C++: the word at start follows . or -> */
 int  word_prefix(const Buffer *b, int *start);   /* the word ending at the cursor */
 /* The word index: BUFFER.C takes a line's words out (-1) before changing
  * it and puts them back (+1) after, so suggestions never read a whole file. */

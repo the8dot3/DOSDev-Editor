@@ -152,20 +152,28 @@ static int c_line(const char *s, int n, const unsigned char *role, int l, Sym *o
  *   using NAME = ...; and the C rules for #define and typedef;
  *   a function: a name and its ( whose ) is followed by { (or by : and the
  *   member initialisers, or const, override ... and then {) before any ; or
- *   =, on this line or the next few. Its name has the classes it is in in
- *   front: bar in the body of class Foo, and void Foo::bar() outside it,
- *   are both Foo::bar. Constructors (Foo::Foo), destructors (Foo::~Foo) and
+ *   =, on this line or the next few. Its name has the class it is in in
+ *   front: bar in the body of class Foo, and void ns::Foo::bar() outside
+ *   it, are both Foo::bar (only the innermost class, no namespace: see
+ *   add_scoped). Constructors (Foo::Foo), destructors (Foo::~Foo) and
  *   operators (Foo::operator+) are functions too. A template's parameter
  *   list is left out (template <class T> T max(T, T) is max; Stack<T>::push
- *   is Stack::push), and namespaces are not written in names.
+ *   is Stack::push).
+ * A constructor's member initialisers (: x_(x), y_(2), over any number of
+ * lines) are passed over until the body's { (after_params, CppScope.init),
+ * and each #else or #elif branch is counted from the braces at its #if.
  * It is a guess from the shape of lines, as the C rules are. */
 
 #define SCOPES 16
+#define IFS 8
 typedef struct {
     int depth, nsc;             /* braces open; the scopes open */
     struct { char name[40]; int depth, cls; } sc[SCOPES];
     char pending[40]; int pend, pcls;   /* a class or namespace whose { is still to come */
     int in_define;              /* the line before was a # line ending in \ */
+    int paren;                  /* a definition's parameters still open, over lines */
+    int init;                   /* in a constructor's initialiser list, until { or ; */
+    struct { int depth, nsc; } ifs[IFS]; int nifs;   /* at each #if: #else starts there again */
 } CppScope;
 
 static int word_at(const char *s, int n, int i, const char *w)
@@ -187,18 +195,29 @@ static int angle_end(const char *s, int n, int i)
     return -1;
 }
 
-/* name, with the class scopes it is in in front: Foo::bar */
+/* A name as it is listed: the class it is in and the name, Foo::bar, both
+ * for bar in the body of class Foo and for outer::Foo::bar written outside
+ * it. Only the innermost class is written, and no namespace, so names stay
+ * short (Sym's name holds 39 characters; snprintf cuts what is longer). */
 static int add_scoped(const CppScope *c, Sym *out, int k, int max, const char *name, int line, char kind)
 {
-    char t[80];
-    int i, n = 0;
-    t[0] = 0;
-    if (!strstr(name, "::"))
-        for (i = 0; i < c->nsc; i++)
-            if (c->sc[i].cls && c->sc[i].name[0])
-                n += snprintf(t + n, sizeof t - n, "%s::", c->sc[i].name);
-    if (n < (int)sizeof t)
-        snprintf(t + n, sizeof t - n, "%s", name);
+    char t[sizeof out[0].name];
+    const char *p = name, *q, *last = NULL;
+    int i;
+    while ((q = strstr(p, "::")) != NULL) {     /* a::b::Foo::bar: from Foo */
+        last = p;
+        p = q + 2;
+    }
+    if (last)
+        snprintf(t, sizeof t, "%s", last);
+    else {
+        for (i = c->nsc - 1; i >= 0 && !(c->sc[i].cls && c->sc[i].name[0]); i--)
+            ;
+        if (i >= 0)
+            snprintf(t, sizeof t, "%s::%s", c->sc[i].name, name);
+        else
+            snprintf(t, sizeof t, "%s", name);
+    }
     return add(out, k, max, t, 0, (int)strlen(t), line, kind);
 }
 
@@ -241,6 +260,28 @@ static int has_body(const Line *ln, int n, int l, int i)
     return 0;
 }
 
+/* A definition's parameters, from a ( at s[0], or the rest of them on a
+ * later line (c->paren still open): where they close, a single : starts
+ * the member initialisers, x_(x), y_(2), which are not definitions. They
+ * end at the body's { (or a ;), which cpp_braces sees. */
+static void after_params(CppScope *c, const char *s, int n, const unsigned char *role)
+{
+    int i;
+    for (i = 0; i < n; i++) {
+        if (role[i] != A_SYMBOL && role[i] != A_TEXT)
+            continue;
+        if (s[i] == '(')
+            c->paren++;
+        else if (s[i] == ')' && c->paren > 0 && --c->paren == 0)
+            break;
+    }
+    for (i++; i < n && !c->paren; i++)
+        if (role[i] == A_TEXT && s[i] == ':' && (i + 1 >= n || s[i + 1] != ':') && (i == 0 || s[i - 1] != ':')) {
+            c->init = !memchr(s + i, '{', n - i);
+            return;
+        }
+}
+
 static int is_not_a_name(const char *s, int n)
 {
     static const char *const w[] = { "if", "while", "for", "switch", "return", "sizeof", "catch", "decltype",
@@ -254,7 +295,7 @@ static int is_not_a_name(const char *s, int n)
 }
 
 /* The function on a declaration line from s[i], if it is one. */
-static int cpp_function(const CppScope *c, const Line *ln, int nl, int l, int i, const unsigned char *role,
+static int cpp_function(CppScope *c, const Line *ln, int nl, int l, int i, const unsigned char *role,
                         Sym *out, int k, int max)
 {
     const char *s = ln[l].s;
@@ -338,6 +379,7 @@ static int cpp_function(const CppScope *c, const Line *ln, int nl, int l, int i,
     name[m] = 0;
     if (!m || isdigit((unsigned char)name[0]) || name[0] == ':' || is_not_a_name(name, m))
         return k;
+    after_params(c, s + paren, n - paren, role + paren);
     return add_scoped(c, out, k, max, name, l, 'f');
 }
 
@@ -440,6 +482,22 @@ static void cpp_braces(CppScope *c, const char *s, int n, const unsigned char *r
 {
     int i = skip_sp(s, n, 0), define = c->in_define;
     c->in_define = (define || (i < n && s[i] == '#')) && n > 0 && s[n - 1] == '\\';
+    if (!define && i < n && s[i] == '#') {
+        /* #if and #else branches that each open a brace: each branch starts
+         * from the braces there were at the #if */
+        int w = skip_sp(s, n, i + 1);
+        if (word_at(s, n, w, "if") || word_at(s, n, w, "ifdef") || word_at(s, n, w, "ifndef")) {
+            if (c->nifs < IFS) {
+                c->ifs[c->nifs].depth = c->depth;
+                c->ifs[c->nifs].nsc = c->nsc;
+            }
+            c->nifs++;
+        } else if ((word_at(s, n, w, "else") || word_at(s, n, w, "elif")) && c->nifs > 0 && c->nifs <= IFS) {
+            c->depth = c->ifs[c->nifs - 1].depth;
+            c->nsc = c->ifs[c->nifs - 1].nsc;
+        } else if (word_at(s, n, w, "endif") && c->nifs > 0)
+            c->nifs--;
+    }
     if (define || (i < n && s[i] == '#'))
         return;                              /* a # line's braces are a macro's */
     for (; i < n; i++) {
@@ -453,13 +511,14 @@ static void cpp_braces(CppScope *c, const char *s, int n, const unsigned char *r
                 c->sc[c->nsc++].cls = c->pcls;
             }
             c->pend = 0;
+            c->init = 0;
         } else if (s[i] == '}') {
             if (c->nsc && c->sc[c->nsc - 1].depth == c->depth)
                 c->nsc--;
             if (c->depth > 0)
                 c->depth--;
         } else if (s[i] == ';')
-            c->pend = 0;
+            c->pend = c->init = 0;
     }
 }
 
@@ -590,7 +649,11 @@ int sym_scan(int lang, const Line *ln, int n, Sym *out, int max)
         case L_CPP:
             i = cs.nsc ? cs.sc[cs.nsc - 1].depth : 0;     /* where declarations are */
             e = skip_sp(s, len, 0);
-            if (!cs.in_define && (cs.depth == i || (cs.depth == i + 1 && e < len && s[e] == '}')))
+            if (cs.paren)
+                after_params(&cs, s, len, role);   /* a definition's parameters go on */
+            else if (cs.depth == i && e < len && (s[e] == ',' || (s[e] == ':' && (e + 1 >= len || s[e + 1] != ':'))))
+                cs.init = 1;                       /* : x_(x), and , y_(2): initialisers, not definitions */
+            else if (!cs.in_define && !cs.init && (cs.depth == i || (cs.depth == i + 1 && e < len && s[e] == '}')))
                 k = cpp_decl(&cs, ln, n, l, role, out, k, max);   /* (} Name; closes a typedef) */
             cpp_braces(&cs, s, len, role);
             break;

@@ -12,29 +12,39 @@
 - C++ colours C++17's keywords, the C++20 ones in common use, the
   alternative words (`and`, `not` ...), `nullptr`, the casts, and
   `override` and `final`. `import` and `module` stay names. A raw string,
-  `R"x( ... )x"`, is coloured over as many lines as it takes. Digit
+  `R"x( ... )x"`, is coloured over as many lines as it takes. DE keeps
+  251 delimiters; after that a new one ends at the first `)` followed by
+  up to 16 delimiter characters and `"`. Digit
   separators, exponents, prefixes such as `u8` and suffixes such as `"x"s`
   and `10_km` are part of their number or string.
 - Ctrl-L and F12 find C++'s classes, structs, enums, namespaces, `using`
   names, and functions in namespaces and class bodies. A method is listed
   as `Foo::bar`, whether it is written in the class or outside it;
-  constructors, destructors and operators too. F12 on `bar` finds
+  constructors, destructors and operators too. Only the innermost class
+  is written, and no namespace. Constructors' member initialiser lists
+  are not taken for functions, and `#if`/`#else` branches that each open
+  a brace no longer lose the symbols after them. F12 on `bar` finds
   `Foo::bar`, looks in C files from C++ and the other way round, and opens
   DJGPP's `<vector>` and the like from `DJDIR\INCLUDE\CXX`.
 - The reference has 119 entries for the everyday C++ library, each with
   its header. A C++ file sees C's entries too. After `std::`, suggestions
-  are the reference's C++ names alone. There is no `<thread>`.
+  are the reference's C++ names alone. After `.` or `->`, the reference's
+  free functions are not suggested or shown (`s.find(` is not
+  `std::find`). There is no `<thread>`.
 - F9 on a `.CPP` with no project offers `gpp -Wall -g -o NAME.EXE -x c++
   NAME.CPP`.
 - g++'s `required from here` lines are notes, with their place, so F8
-  goes to where your code used a template. The source lines GCC 9 and
+  goes to where your code used a template. F8 and Shift-F8 skip notes
+  about files outside the project, such as g++'s notes in the C++
+  library's headers; F7 still lists them. The source lines GCC 9 and
   later show under a message are text, even when they say `error:`. An
   error in a C++ library header (`vector`, `bits/vector.tcc`) has its
   place.
 - Keep mine, after a run that changed a file's size, is not asked again
   for the same change. DE took the file's new time but not its new size.
-- The syntax state of a file's first line was not always set; a stray
-  value could colour the first line as a comment.
+- The syntax state of a file's first line was never set: it was whatever
+  the memory held, and a stray value could colour the first line as a
+  comment.
 - The random-edit test also edits a C++ file and a Pascal file.
 
 ## 0.6

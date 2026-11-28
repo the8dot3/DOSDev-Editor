@@ -1,6 +1,19 @@
 /* DE - syntax colours. syn_line() gives each byte of a line a role (A_TEXT,
  * A_KEYWORD ...), given the state the line starts in (inside a comment
- * that began on an earlier line), and returns the state it ends in. */
+ * that began on an earlier line), and returns the state it ends in.
+ *
+ * This file is shared, byte for byte, with DS. What it needs from DE.H,
+ * the header of the program that includes it:
+ *   - the languages: enum L_TEXT, L_C, L_ASM, L_PASCAL, L_BASIC, L_BATCH,
+ *     L_MAKE, L_INI, L_CPP, L_COUNT, in that order (lang_name follows it);
+ *   - the roles A_TEXT, A_KEYWORD, A_TYPE, A_COMMENT, A_STRING, A_NUMBER,
+ *     A_PREPROC and A_SYMBOL;
+ *   - void *xrealloc(void *p, size_t n), which does not return NULL, and
+ *     const char *base_name(const char *path), the name after the last
+ *     / or \;
+ *   - the prototypes of what this file defines for the program: lang_name,
+ *     lang_of, lang_of_text, lang_family, ext_is, syn_line, lang_comment,
+ *     lang_lists, lang_nocase and is_word_char. */
 #include <ctype.h>
 #include <string.h>
 #include "DE.H"
@@ -42,13 +55,14 @@ int ext_is(const char *path, const char *list)
 
 /* The C++ library's own headers have no extension (<vector> is a file
  * called vector), in a folder called c++ (GCC) or cxx (DJGPP). */
+#define STD_PATH 260               /* longer paths are cut: the folder is near the start */
 static int std_header(const char *path)
 {
-    char t[DE_PATH];
+    char t[STD_PATH];
     int i;
     if (strchr(base_name(path), '.'))
         return 0;
-    for (i = 0; path[i] && i < DE_PATH - 1; i++)
+    for (i = 0; path[i] && i < STD_PATH - 1; i++)
         t[i] = (char)tolower((unsigned char)(path[i] == '\\' ? '/' : path[i]));
     t[i] = 0;
     return strstr(t, "/c++/") || strstr(t, "/cxx/");
@@ -94,15 +108,24 @@ static int starts(const char *s, long n, const char *w)
 static int cpp_line(const char *t, long n)
 {
     long k;
-    if (starts(t, n, "class ") || starts(t, n, "namespace ")
-        || (starts(t, n, "template") && n > 8 && (t[8] == '<' || t[8] == ' ')))
+    long i;
+    if (starts(t, n, "class ") || starts(t, n, "namespace "))
         return 1;
-    if (!starts(t, n, "#include <"))
+    if (starts(t, n, "template")) {        /* template <, not a C name template */
+        for (k = 8; k < n && (t[k] == ' ' || t[k] == '\t'); k++)
+            ;
+        return k < n && t[k] == '<';
+    }
+    if (!starts(t, n, "#include"))
         return 0;
-    for (k = 10; k < n && t[k] != '>'; k++)
+    for (i = 8; i < n && (t[i] == ' ' || t[i] == '\t'); i++)
+        ;                                   /* #include<vector> too */
+    if (i >= n || t[i] != '<')
+        return 0;
+    for (k = ++i; k < n && t[k] != '>'; k++)
         if (t[k] == '.' || t[k] == ' ')
             return 0;
-    return k < n && k > 10;
+    return k < n && k > i;
 }
 
 /* A .H file is C, unless the first 4 KB of its text show C++ (cpp_line, on
@@ -288,7 +311,7 @@ static int c_number(const char *s, int n, int i, int cpp)
         else if (c == '\'' && i > start && i + 1 < n && isalnum((unsigned char)s[i - 1]) && isalnum((unsigned char)s[i + 1]))
             i++;
         else if ((c == '+' || c == '-') && i > start
-                 && (hex ? up(s[i - 1]) == 'P' : up(s[i - 1]) == 'E' && isdigit((unsigned char)s[start])))
+                 && (hex ? up(s[i - 1]) == 'P' : up(s[i - 1]) == 'E' && (isdigit((unsigned char)s[start]) || s[start] == '.')))
             i++;
         else
             break;
@@ -311,10 +334,15 @@ static int suffix(const char *s, int n, int i)
  * same one for as long as DE runs, and the state is S_RAW + that number.
  * So a state means the same on every line and in every file, and buf_state
  * can still stop early when a state comes out as it was. 0 is the empty
- * delimiter, R"( ... )". */
+ * delimiter, R"( ... )". The last number, RAW_WILD, is kept for when the
+ * table is full: a string with a new delimiter then ends at the first )
+ * followed by up to 16 delimiter characters and a " (raw_end). That may
+ * be too early, but never later than the right place, and it is the same
+ * rule on every line, so stopping early stays right. */
 #define RAW_LONGEST 16             /* the longest delimiter the standard allows */
 #define RAW_ROOM (256 - S_RAW)
-static char raw_delim[RAW_ROOM][RAW_LONGEST + 1];
+#define RAW_WILD (RAW_ROOM - 1)
+static char raw_delim[RAW_WILD][RAW_LONGEST + 1];
 static int nraw = 1;
 
 static int raw_state(const char *d, int n)
@@ -323,19 +351,36 @@ static int raw_state(const char *d, int n)
     for (i = 0; i < nraw; i++)
         if ((int)strlen(raw_delim[i]) == n && !memcmp(raw_delim[i], d, n))
             return S_RAW + i;
-    if (nraw == RAW_ROOM)
-        return S_RAW;               /* no room left: taken as R"( ... )" */
+    if (nraw == RAW_WILD)
+        return S_RAW + RAW_WILD;    /* no room left: any )delim" ends it */
     memcpy(raw_delim[nraw], d, n);
     raw_delim[nraw][n] = 0;
     return S_RAW + nraw++;
+}
+
+static int raw_char(int c)          /* may it be in a delimiter? */
+{
+    return c >= 32 && c != ' ' && c != '(' && c != ')' && c != '\\' && c != '"';
 }
 
 /* Where the raw string of this state ends, looking from s[i]: just past
  * its )delim", or -1 if not on this line. */
 static int raw_end(const char *s, int n, int i, int state)
 {
-    const char *d = raw_delim[state - S_RAW];
-    int dn = (int)strlen(d);
+    const char *d;
+    int dn, k;
+    if (state - S_RAW == RAW_WILD) {
+        for (; i < n; i++)
+            if (s[i] == ')') {
+                for (k = i + 1; k < n && k - i - 1 < RAW_LONGEST && raw_char((unsigned char)s[k]); k++)
+                    ;
+                if (k < n && s[k] == '"')
+                    return k + 1;
+            }
+        return -1;
+    }
+    d = raw_delim[state - S_RAW];
+    dn = (int)strlen(d);
     for (; i + dn + 1 < n; i++)
         if (s[i] == ')' && !memcmp(s + i + 1, d, dn) && s[i + dn + 1] == '"')
             return i + dn + 2;

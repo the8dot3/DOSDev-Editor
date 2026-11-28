@@ -336,6 +336,19 @@ static int after_std(const Buffer *b, int s)
     return 0;
 }
 
+/* In C++, is the word that starts at s written after . or ->? Then it is
+ * a member, and the reference's other names (std::find for s.find) are
+ * not it: they are neither suggested nor shown. */
+int after_member(const Buffer *b, int s)
+{
+    const char *t = b->ln[b->cy].s;
+    if (b->lang != L_CPP)
+        return 0;
+    while (s > 0 && t[s - 1] == ' ')
+        s--;
+    return (s > 0 && t[s - 1] == '.') || (s > 1 && t[s - 1] == '>' && t[s - 2] == '-');
+}
+
 int sug_collect(Buffer *b, const char *p, int plen, Cand *v, int max)
 {
     const char *lists[4], *self;
@@ -362,7 +375,7 @@ int sug_collect(Buffer *b, const char *p, int plen, Cand *v, int max)
     }
     /* the reference: in C++ its own entries first, then C's (add keeps the
      * first entry it is given for a word) */
-    for (pass = 0; rl >= 0 && pass < (rl == L_CPP && !in_std ? 2 : 1); pass++)
+    for (pass = 0; rl >= 0 && !after_member(b, s) && pass < (rl == L_CPP && !in_std ? 2 : 1); pass++)
         for (i = 0; i < nrefs; i++) {
             const Ref *r = &refs[i];
             int rn = (int)strlen(r->name), ok = 1;
@@ -526,7 +539,7 @@ const Ref *sug_call(const Buffer *b)
     e = i;
     while (i > 0 && is_word_char(b->lang, (unsigned char)L->s[i - 1]))
         i--;
-    return e > i ? ref_find(b->lang, L->s + i, e - i) : NULL;
+    return e > i && !after_member(b, i) ? ref_find(b->lang, L->s + i, e - i) : NULL;
 }
 
 /* ---- the list (Ctrl+Space) ---------------------------------------------- */

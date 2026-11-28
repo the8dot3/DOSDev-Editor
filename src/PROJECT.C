@@ -622,6 +622,7 @@ int msg_parse(const char *line, int *kind, char *file, int fsize, int *lno, int 
 static Msg msgs[MAXMSGS];
 static int nmsgs, curmsg = -1, dropped;
 static char title[100];
+static char msgdir[DE_PATH];       /* the project the build ran in: F8 keeps to it */
 
 void msgs_clear(const char *t)
 {
@@ -632,6 +633,7 @@ void msgs_clear(const char *t)
     }
     nmsgs = dropped = 0;
     curmsg = -1;
+    msgdir[0] = 0;
     snprintf(title, sizeof title, "%s", t ? t : "Messages");
 }
 
@@ -740,8 +742,10 @@ void msgs_set(const char *t, const char *dir, const char *log)
 {
     FILE *f = fopen(log, "r");
     char line[512], file[DE_PATH], full[DE_PATH];
-    if (t)
+    if (t) {
         msgs_clear(t);
+        plat_fullpath(dir, msgdir);
+    }
     if (!f)
         return;
     while (fgets(line, sizeof line, f)) {
@@ -788,6 +792,31 @@ static void go_to(int i)
     }
 }
 
+/* Is the path in the folder dir, or a folder in it? Any case, / or \. */
+static int in_folder(const char *path, const char *dir)
+{
+    size_t n = strlen(dir), i;
+    while (n > 0 && (dir[n - 1] == '/' || dir[n - 1] == '\\'))
+        n--;
+    for (i = 0; i < n; i++) {
+        int a = tolower((unsigned char)path[i]), b = tolower((unsigned char)dir[i]);
+        if (a == '\\') a = '/';
+        if (b == '\\') b = '/';
+        if (a != b)
+            return 0;
+    }
+    return path[n] == '/' || path[n] == '\\';
+}
+
+/* F8 and Shift+F8 go to the messages that say where, except notes about
+ * files outside the project: a note in a library's header (g++'s
+ * "candidate: ..." in stl_vector.h) would open that header for editing.
+ * Those stay in the F7 list, where Enter still goes to them. */
+static int f8_stops_at(const Msg *m)
+{
+    return m->path && !(m->kind == M_NOTE && msgdir[0] && !in_folder(m->path, msgdir));
+}
+
 void msgs_next(int dir)
 {
     int i, k;
@@ -797,7 +826,7 @@ void msgs_next(int dir)
     }
     for (k = 1; k <= nmsgs; k++) {
         i = ((curmsg < 0 ? (dir > 0 ? -1 : 0) : curmsg) + dir * k + nmsgs * 2) % nmsgs;
-        if (msgs[i].path) {
+        if (f8_stops_at(&msgs[i])) {
             go_to(i);
             if (msgs[i].kind == M_FOUND)
                 ed_message(0, "%d of %d: %s", i + 1, nmsgs, msgs[i].text);

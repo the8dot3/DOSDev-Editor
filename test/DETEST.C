@@ -24,7 +24,7 @@ extern unsigned char t_pal[48];
 extern int de_fail_alloc;
 
 static int passes, fails;
-static char dir[512];
+static char dir[512], srcdir[512];   /* srcdir: test/, for the files the tests read */
 
 #define CHECK(what, cond) do { if (cond) passes++; else { fails++; printf("  FAIL  %s (line %d)\n", what, __LINE__); } } while (0)
 
@@ -1026,6 +1026,8 @@ static void test_cpp_language(void)
     CHECK("...so do namespace and template", lang_of_text("X.H", "namespace a {\n", 14) == L_CPP
           && lang_of_text("X.H", "template<class T>\n", 18) == L_CPP && lang_of_text("X.H", "template <class T>\n", 19) == L_CPP);
     CHECK("...and #include <vector>, a name with no dot", lang_of_text("X.H", "#include <vector>\n", 18) == L_CPP);
+    CHECK("...not template as a name at the start of a line, in C", lang_of_text("X.H", "template = 3;\ntemplate x;\n", 25) == L_C);
+    CHECK("...#include<vector> with no space is C++ too", lang_of_text("X.H", "#include<vector>\n", 17) == L_CPP);
     CHECK("...not #include <sys/types.h>", lang_of_text("X.H", "#include <sys/types.h>\n", 23) == L_C);
     CHECK("...not class in a comment, or a word that starts with it", lang_of_text("X.H", "/* the\nclass Foo */\n// class X\nint classes;\n", 43) == L_C);
     for (i = 0; i < 4096; i += 8)
@@ -1089,6 +1091,15 @@ static void test_cpp_language(void)
           && at_role(10, "module", 0, A_TEXT) && at_role(10, "override", 0, A_KEYWORD));
     CHECK("C++: comments as in C", at_role(12, "b */", 0, A_COMMENT) && at_role(12, "int", 0, A_TYPE) && at_role(12, "// done", 0, A_COMMENT));
     CHECK("...and the states kept for the lines are right", buf_state_check(files[cur]));
+    {
+        unsigned char role[16];
+        syn_line(L_CPP, "x = .5e-3;", 10, 0, role);
+        CHECK("C++: .5e-3 is one number", role[4] == A_NUMBER && role[7] == A_NUMBER && role[8] == A_NUMBER);
+    }
+    files[cur]->hs[0] = 1;                  /* a stray state for line 0, with hvalid 1 */
+    files[cur]->hvalid = 1;
+    run();
+    CHECK("the first line's state is set again, whatever was there", files[cur]->hs[0] == 0 && at_role(2, "#include", 0, A_PREPROC));
     write_file("CW.C", "class Foo { public: new delete this; };\nint x = template + nullptr;\nchar *s = R\"x(;\nint y;\n", -1);
     ed_open(path("CW.C"), 0);
     run();
@@ -1158,7 +1169,24 @@ static void test_cpp_symbols(void)
         "typedef struct {\n"
         "    int y;\n"
         "} Thing;\n"
-        "#define TWICE(x) ((x) * 2)\n", s);
+        "#define TWICE(x) ((x) * 2)\n"
+        "Widget::Widget(int x)\n"                                /* 55 */
+        "    : x_(x),\n"
+        "      y_(2),\n"
+        "      name_(\"w\")\n"
+        "{\n"
+        "}\n"                                                    /* 60 */
+        "Derived::Derived(const Derived &o)\n"
+        "    : Base(o)\n"
+        "    , z_(o.z_)\n"
+        "{\n"
+        "}\n"                                                    /* 65 */
+        "class Gadget {\n"
+        "    Gadget(int x)\n"
+        "        : x_(x), y_(2)\n"
+        "    {}\n"
+        "};\n"                                                   /* 70 */
+        "void outer::inner::Widget::decl() {}\n", s);
     CHECK("C++: a namespace, a class and its constructor and destructor", has_sym(s, n, "geo", 1, 'n') && has_sym(s, n, "Point", 3, 't')
           && has_sym(s, n, "Point::Point", 5, 'f') && has_sym(s, n, "Point::~Point", 6, 'f'));
     CHECK("...methods defined in the class body, operators among them", has_sym(s, n, "Point::x", 8, 'f')
@@ -1169,13 +1197,36 @@ static void test_cpp_symbols(void)
     CHECK("...enum class, using, a function over two lines, a free operator, typedef and #define",
           has_sym(s, n, "Colour", 39, 't') && has_sym(s, n, "Names", 41, 't') && has_sym(s, n, "main", 44, 'f')
           && has_sym(s, n, "operator==", 50, 'f') && has_sym(s, n, "Thing", 53, 't') && has_sym(s, n, "TWICE", 54, 'd'));
-    CHECK("...and nothing else: not declarations, not what is inside a function", n == 18);
-    if (n != 18) {
+    CHECK("constructors whose initialiser lists go over lines: no symbols from the list",
+          has_sym(s, n, "Widget::Widget", 55, 'f') && has_sym(s, n, "Derived::Derived", 61, 'f')
+          && has_sym(s, n, "Gadget", 66, 't') && has_sym(s, n, "Gadget::Gadget", 67, 'f'));
+    CHECK("a definition written with its namespaces is Class::method", has_sym(s, n, "Widget::decl", 71, 'f'));
+    CHECK("...and nothing else: not declarations, not what is inside a function or a list", n == 23);
+    if (n != 23) {
         int i;
         for (i = 0; i < n; i++)
             printf("        %c %d %s\n", s[i].kind, s[i].line, s[i].name);
     }
 
+    n = scan(L_CPP,
+        "class AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA {\n"
+        "class BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB {\n"
+        "class Inner {\n"
+        "    void method() {}\n"
+        "};\n};\n};\n", s);
+    CHECK("classes inside classes with long names: the innermost class and the name, within bounds",
+          has_sym(s, n, "Inner::method", 3, 'f'));
+    n = scan(L_CPP,
+        "#ifdef BIG\n"
+        "long f(long a) {\n"
+        "#else\n"
+        "int f(int a) {\n"
+        "#endif\n"
+        "    return a;\n"
+        "}\n"
+        "void g() {}\n", s);
+    CHECK("#if and #else branches that each open a brace: the symbols after them are still found",
+          has_sym(s, n, "f", 1, 'f') && has_sym(s, n, "f", 3, 'f') && has_sym(s, n, "g", 7, 'f') && n == 3);
     mkdir(path("CPPP"), 0777);
     write_file("CPPP/project.ini", "[project]\nname = Geometry\n", -1);
     write_file("CPPP/GEO.HPP", "#pragma once\nnamespace geo {\nclass Point {\npublic:\n    double area() const { return 0; }\n"
@@ -1264,6 +1315,19 @@ static void test_cpp_suggestions(void)
     run();
     CHECK("inside std::sort's brackets, the status line shows it", strstr(row_text(24), "void sort(RandomIt first, RandomIt last);"));
     keys(2, KM_CTRL | 'A', DK_DEL);
+    type("s.find(");
+    run();
+    CHECK("after s. a member call gets no free function's signature", !strstr(row_text(24), "InputIt"));
+    keys(2, KM_CTRL | 'A', DK_DEL);
+    type("p->get(");
+    run();
+    CHECK("...nor after p->", !strstr(row_text(24), "tuple_element_t"));
+    keys(2, KM_CTRL | 'A', DK_DEL);
+    type("m.count");
+    keys(1, KM_CTRL | DK_F1);
+    run();
+    CHECK("...and Ctrl-F1 on m.count searches, rather than showing std::count", t_snapped && snap_has("Reference: C++"));
+    keys(2, KM_CTRL | 'A', DK_DEL);
     type("v.push_back");
     keys(1, KM_CTRL | DK_F1);
     run();
@@ -1304,9 +1368,16 @@ static void test_cpp_build(void)
     CHECK("g++ 12: a note", parsed("TUP.CPP:8:33: note: declared here", M_NOTE, "TUP.CPP", 8, 33, "declared here"));
     CHECK("g++ 12: the linker", parsed("/tmp/ccAnPCIo.o:LNK.CPP:(.text+0x7): undefined reference to `foo()'", M_ERROR, NULL, 0, 0, NULL)
           && parsed("collect2: error: ld returned 1 exit status", M_ERROR, NULL, 0, 0, NULL));
-    /* g++ 9.3 (DJGPP's own, in DOS) writes the same shapes; its headers are in DJDIR/include/cxx/9 */
-    CHECK("g++ 9: required from, in DJGPP's headers", parsed("c:/djgpp/include/cxx/9/bits/stl_algo.h:1975:22:   required from 'void std::__sort(...)'",
-          M_NOTE, "c:/djgpp/include/cxx/9/bits/stl_algo.h", 1975, 22, "required from 'void std::__sort(...)'"));
+    /* g++ 9.3, DJGPP's own, as it printed these inside DOS (test/gpp93-real.txt) */
+    CHECK("g++ 9 (real): required from here", parsed("BAD.CPP:8:20:   required from here", M_NOTE, "BAD.CPP", 8, 20, "required from here"));
+    CHECK("g++ 9 (real): a note in DJGPP's <vector>", parsed("c:/djgpp/include/cxx/9/bits/stl_vector.h:1184:7: note:   conversion of argument 1 would be ill-formed:",
+          M_NOTE, "c:/djgpp/include/cxx/9/bits/stl_vector.h", 1184, 7, "  conversion of argument 1 would be ill-formed:"));
+    CHECK("g++ 9 (real): a note after a tab", parsed("BAD.CPP:4:28: note: \t'virtual int Shape::area() const'", M_NOTE, "BAD.CPP", 4, 28,
+          "\t'virtual int Shape::area() const'"));
+    CHECK("g++ 9 (real): the source lines and their marks are text", parsed("   12 | }", M_TEXT, NULL, 0, 0, NULL)
+          && parsed("      |                 |", M_TEXT, NULL, 0, 0, NULL) && parsed("      | ~            ", M_TEXT, NULL, 0, 0, NULL));
+    CHECK("g++ 9 (real): In file included from is text", parsed("In file included from c:/djgpp/include/cxx/9/vector:67,", M_TEXT, NULL, 0, 0, NULL));
+    /* (constructed, in g++ 9's shapes) */
     CHECK("g++ 9: an error in <vector>, which is a file called vector", parsed("c:/djgpp/include/cxx/9/vector:12:3: error: x", M_ERROR,
           "c:/djgpp/include/cxx/9/vector", 12, 3, "x"));
     CHECK("g++ 9: an error in its template code (.tcc)", parsed("c:/djgpp/include/cxx/9/bits/vector.tcc:1:1: error: y", M_ERROR,
@@ -1328,6 +1399,49 @@ static void test_cpp_build(void)
     keys(1, DK_F8);
     run();
     CHECK("...F8 goes to the error, then to where the template was used", files[cur]->cy == 4 && files[cur]->cx == 5);
+    if (srcdir[0]) {
+        static const int want[][2] = { { 7, 23 }, { 7, 17 }, { 7, 17 }, { 9, 11 }, { 4, 8 }, { 4, 28 }, { 10, 5 }, { 11, 13 }, { 8, 20 }, { 3, 47 } };
+        char real[4096], t[700];
+        FILE *f;
+        size_t got;
+        int k, ok = 1;
+        snprintf(t, sizeof t, "%s/gpp93-real.txt", srcdir);
+        f = fopen(t, "rb");
+        got = f ? fread(real, 1, sizeof real - 1, f) : 0;
+        if (f)
+            fclose(f);
+        real[got] = 0;
+        mkdir(path("GPP9"), 0777);
+        write_file("GPP9/project.ini", "[project]\nbuild_on = dos\nbuild = cat GPP.OUT\n", -1);
+        write_file("GPP9/GPP.OUT", real, (int)got);
+        write_file("GPP9/BAD.CPP", "#include <vector>\n\ntemplate <typename T> T twice(T x) { return x.nothere(); }\n"
+                   "struct Shape { virtual int area() const = 0; };\nint main() {\n    std::vector<int> v;\n"
+                   "    v.push_back(\"text\");\n    int y = twice(3);\n    Shape s;\n    undeclared_name = 4;\n    return 0\n}\n", -1);
+        fresh();
+        ed_open(path("GPP9/BAD.CPP"), 0);
+        keys(1, DK_F9);
+        run();
+        CHECK("real g++ 9.3 output: 7 errors and 7 notes, the four in DJGPP's header among them",
+              got > 0 && msgs_count(M_ERROR) == 7 && msgs_count(M_NOTE) == 7);
+        for (k = 0; k < 11; k++) {
+            int w = k % 10;
+            keys(1, DK_F8);
+            run();
+            if (!strstr(files[cur]->path, "BAD.CPP") || files[cur]->cy != want[w][0] - 1 || files[cur]->cx != want[w][1] - 1) {
+                printf("        F8 %d went to %s %d:%d\n", k + 1, base_name(files[cur]->path), files[cur]->cy + 1, files[cur]->cx + 1);
+                ok = 0;
+            }
+        }
+        CHECK("...F8 goes to the 10 places in BAD.CPP in order, then round; not into the library's header", ok && nfiles == 1);
+        keys(1, KM_SHIFT | DK_F8);
+        run();
+        CHECK("...Shift-F8 goes back the same way", files[cur]->cy == 2 && files[cur]->cx == 46);
+        keys(2, DK_F7, DK_HOME);          /* line 7 of the list: the first note in stl_vector.h */
+        keys(6, DK_DOWN, DK_DOWN, DK_DOWN, DK_DOWN, DK_DOWN, DK_DOWN);
+        keys(1, DK_ENTER);
+        run();
+        CHECK("...F7 still lists the header's notes, and Enter still goes to one", strstr(row_text(24), "stl_vector.h"));
+    }
     mkdir(path("LOOSE"), 0777);
     write_file("LOOSE/HELLO.CPP", "int main() { return 0; }\n", -1);
     fresh();
@@ -1436,6 +1550,34 @@ static void test_random(void)
     CHECK("...in Pascal, with { } and (* *) comments over lines, 20 rounds",
           random_rounds("RAND.PAS", "program P; { a\nb } (* c\nd *)\nbegin WriteLn('x') end.\n",
                         pas_keys, (int)(sizeof pas_keys / sizeof pas_keys[0]), 20));
+}
+
+/* More raw-string delimiters than the table holds (run last: the table
+ * lasts as long as the program). A new one is then a wildcard state that
+ * ends at the first ) with up to 16 delimiter characters and a ". */
+static void test_raw_table_full(void)
+{
+    unsigned char role[64];
+    char line[32];
+    int i, st = 0, first_full = -1, ok = 1;
+    puts("C++: more raw-string delimiters than the table holds");
+    for (i = 0; i < 300; i++) {
+        int n = snprintf(line, sizeof line, "R\"d%03d(", i), e;
+        st = syn_line(L_CPP, line, n, 0, role);
+        n = snprintf(line, sizeof line, ")d%03d\" int x;", i);
+        e = syn_line(L_CPP, line, n, st, role);
+        if (e != 0 || role[n - 6] != A_TYPE)
+            ok = 0;                         /* each one still ends at its own )delim" */
+        if (st == 255 && first_full < 0)
+            first_full = i;
+    }
+    CHECK("every raw string ends at its own delimiter, past the table's size too", ok);
+    CHECK("...the table fills (a wildcard state after that)", first_full > 0 && st == 255);
+    st = syn_line(L_CPP, "R\"new1(", 7, 0, role);
+    i = syn_line(L_CPP, "a )\" b", 6, st, role);
+    CHECK("...a wildcard string ends at the first ) with up to 16 delimiter characters and a \", )\" too", i == 0);
+    i = syn_line(L_CPP, "a ) b )q(\" c", 12, st, role);
+    CHECK("...nor at ) followed by a character no delimiter has", i == st);
 }
 
 /* Open a file, play a script, and write the screen (or the menu or dialog
@@ -1848,6 +1990,7 @@ int main(int argc, char **argv)
         return 0;
     }
     snprintf(dir, sizeof dir, "%s", argc > 1 ? argv[1] : "/tmp/detest");
+    snprintf(srcdir, sizeof srcdir, "%s", argc > 2 ? argv[2] : "");
     mkdir(dir, 0755);
     test_typing_and_files();
     test_undo();
@@ -1874,6 +2017,7 @@ int main(int argc, char **argv)
     test_big_and_memory();
     test_check_switch();
     test_random();
+    test_raw_table_full();
     printf("\n%d passed, %d failed\n", passes, fails);
     return fails != 0;
 }

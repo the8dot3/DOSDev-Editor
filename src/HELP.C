@@ -281,7 +281,7 @@ void help_lookup(Buffer *b)
     }
     memcpy(w, L->s + s, e - s);
     w[e - s] = 0;
-    r = ref_find(b->lang, w, e - s);
+    r = after_member(b, s) ? NULL : ref_find(b->lang, w, e - s);   /* m.count is not std::count */
     if (r)
         help_entry(r);
     else
