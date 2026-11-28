@@ -1438,9 +1438,21 @@ static void test_cpp_build(void)
         CHECK("...Shift-F8 goes back the same way", files[cur]->cy == 2 && files[cur]->cx == 46);
         keys(2, DK_F7, DK_HOME);          /* line 7 of the list: the first note in stl_vector.h */
         keys(6, DK_DOWN, DK_DOWN, DK_DOWN, DK_DOWN, DK_DOWN, DK_DOWN);
-        keys(1, DK_ENTER);
         run();
-        CHECK("...F7 still lists the header's notes, and Enter still goes to one", strstr(row_text(24), "stl_vector.h"));
+        for (k = 0, ok = 0; k < t_rows; k++) {
+            int c = (int)(strstr(snap_row(k), "stl_vector.h(1184)") ? strstr(snap_row(k), "stl_vector.h(1184)") - snap_row(k) : -1);
+            if (c >= 0 && (t_snap[k * t_cols + c] >> 8) == attr[A_LISTSEL])
+                ok = 1;
+        }
+        CHECK("...F7 still lists the header's notes", t_snapped && ok);
+        /* (where the header would be depends on the folder the tests run in,
+         * so what is checked is where F8 goes next: on from that note) */
+        keys(2, DK_F7, DK_HOME);
+        keys(7, DK_DOWN, DK_DOWN, DK_DOWN, DK_DOWN, DK_DOWN, DK_DOWN, DK_ENTER);
+        keys(1, DK_F8);
+        run();
+        CHECK("...and Enter still goes to one: F8 then goes on from it, to BAD.CPP 7:17", strstr(files[cur]->path, "BAD.CPP")
+              && files[cur]->cy == 6 && files[cur]->cx == 16);
     }
     mkdir(path("LOOSE"), 0777);
     write_file("LOOSE/HELLO.CPP", "int main() { return 0; }\n", -1);
