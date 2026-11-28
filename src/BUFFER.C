@@ -428,6 +428,16 @@ int buf_changed_on_disk(const Buffer *b)
     return t != b->disk_time || file_size(b->path) != b->disk_size;
 }
 
+/* The file on disk as it is now is the one this buffer knows: its time and
+ * size, as buf_save takes them. "Keep mine" uses this, so DE does not ask
+ * again about the same change. */
+void buf_disk_seen(Buffer *b)
+{
+    long t;
+    b->disk_time = plat_mtime(b->path, &t) ? 0 : t;
+    b->disk_size = file_size(b->path);
+}
+
 /* For the tests: is everything as it should be? */
 int buf_check(const Buffer *b)
 {
@@ -641,7 +651,6 @@ int buf_save(Buffer *b, const char *path)
 {
     char tmp[DE_PATH];
     FILE *f;
-    long t;
 
     temp_name(path, tmp);
     if (!write_lines(b, tmp))
@@ -665,8 +674,7 @@ int buf_save(Buffer *b, const char *path)
         if (b->words)
             words_build(b);      /* made again if the language changed */
     }
-    b->disk_time = plat_mtime(b->path, &t) ? 0 : t;
-    b->disk_size = file_size(b->path);
+    buf_disk_seen(b);
     b->saved = b->upos;
     b->isnew = 0;
     return 0;

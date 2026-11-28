@@ -151,6 +151,7 @@ int   buf_load(Buffer *b, const char *path);   /* 0 read, 1 new file, -1 error, 
 int   buf_save(Buffer *b, const char *path);   /* 0 saved, -1 not, -2 left in .$$$ */
 int   buf_modified(const Buffer *b);
 int   buf_changed_on_disk(const Buffer *b);    /* has the file changed since it was loaded or saved? */
+void  buf_disk_seen(Buffer *b);                /* ... take the file as it is now as known */
 int   buf_emergency(const Buffer *b, int index, char *name);   /* write it as NAME.SAV (name: DE_PATH long); 0 written */
 void  buf_insert(Buffer *b, int l, int c, const char *t, int n);  /* cursor to its end */
 void  buf_delete(Buffer *b, int l1, int c1, int l2, int c2);      /* cursor to its start */

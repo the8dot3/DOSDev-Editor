@@ -1301,13 +1301,14 @@ static void test_disk_changes(void)
     run();
     CHECK("...a buffer with changes asks", t_snapped && snap_has("RUNF.TXT") && snap_has("Reload") && snap_has("Keep mine"));
     CHECK("...Esc keeps the buffer as it is", text_is("mfresh") && buf_modified(b));
-    write_file("RUNP/project.ini", "[project]\nbuild_on = dos\nrun = printf 'again\\n' > RUNF.TXT; touch -d @1000000250 RUNF.TXT\n", -1);
+    /* a size other than the one DE knows, so Keep mine must take both */
+    write_file("RUNP/project.ini", "[project]\nbuild_on = dos\nrun = printf 'again, and longer\\n' > RUNF.TXT; touch -d @1000000250 RUNF.TXT\n", -1);
     keys(2, KM_CTRL | DK_F9, 'K');
     run();
     CHECK("...so does Keep mine", !t_snapped && text_is("mfresh") && buf_modified(b));
     keys(1, KM_CTRL | DK_F9);
     run();
-    CHECK("...and it is not asked again for the same change", !t_snapped && text_is("mfresh"));
+    CHECK("...and it is not asked again for the same change, though the size changed too", !t_snapped && text_is("mfresh"));
     write_file("RUNP/project.ini", "[project]\nbuild_on = dos\nrun = printf 'last\\n' > RUNF.TXT; touch -d @1000000300 RUNF.TXT\n", -1);
     keys(2, KM_CTRL | DK_F9, 'R');
     run();

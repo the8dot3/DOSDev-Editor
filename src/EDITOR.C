@@ -446,9 +446,7 @@ void ed_check_disk(void)
             snprintf(q, sizeof q, "%s changed on disk, and you have changes in it that are not saved. "
                      "Reload it and lose your changes, or keep yours?", base_name(b->path));
             if (msg_box("Changed on disk", q, rk, 2, 0) != 0) {
-                long t;
-                if (!plat_mtime(b->path, &t))
-                    b->disk_time = t;        /* not asked again for this change */
+                buf_disk_seen(b);            /* not asked again for this change */
                 continue;
             }
         }
