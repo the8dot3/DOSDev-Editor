@@ -150,7 +150,7 @@ void help_manual(void)
 
 static const char *lang_title(int l)
 {
-    return l == L_C ? "C" : l == L_ASM ? "Assembly" : l == L_PASCAL ? "Pascal" : l == L_BASIC ? "BASIC" : "";
+    return l == L_C ? "C" : l == L_CPP ? "C++" : l == L_ASM ? "Assembly" : l == L_PASCAL ? "Pascal" : l == L_BASIC ? "BASIC" : "";
 }
 
 void help_entry(const Ref *r0)
@@ -201,7 +201,7 @@ void help_reference(const char *filter)
         int r, c, w, h, lh, row;
         n = 0;
         for (i = 0; i < nrefs && n < 1024; i++)
-            if ((all || refs[i].lang == rl) && (has_text(refs[i].name, f) || has_text(refs[i].where, f)))
+            if ((all || ref_in(files[cur]->lang, &refs[i])) && (has_text(refs[i].name, f) || has_text(refs[i].where, f)))
                 list[n++] = (short)i;
         if (sel >= n) sel = n - 1;
         if (sel < 0) sel = 0;
@@ -219,7 +219,7 @@ void help_reference(const char *filter)
         for (i = 0; i < lh && top + i < n; i++) {
             const Ref *x = &refs[list[top + i]];
             int on = top + i == sel;
-            snprintf(t, sizeof t, " %-18.18s %s", x->name, x->where);
+            snprintf(t, sizeof t, " %-24.24s %s", x->name, x->where);
             fill(row + i, c + 2, 1, w - 4, ' ', attr[on ? A_LISTSEL : A_HELP]);
             text(row + i, c + 2, t, attr[on ? A_LISTSEL : A_HELP], w - 4);
         }

@@ -164,9 +164,11 @@ void  buf_state(Buffer *b, int upto);           /* syntax states up to a line */
 int   buf_state_check(Buffer *b);               /* for the tests: are they what they'd be made again? */
 
 /* ---- syntax colours: SYNTAX.C ------------------------------------------- */
-enum { L_TEXT, L_C, L_ASM, L_PASCAL, L_BASIC, L_BATCH, L_MAKE, L_INI, L_COUNT };
+enum { L_TEXT, L_C, L_ASM, L_PASCAL, L_BASIC, L_BATCH, L_MAKE, L_INI, L_CPP, L_COUNT };
 extern const char *const lang_name[L_COUNT];
 int  lang_of(const char *path);
+int  lang_of_text(const char *path, const char *text, long n);   /* ... and a .H's first 4 KB: C or C++ */
+int  lang_family(int lang);                      /* C for C++: languages whose files share names */
 int  ext_is(const char *path, const char *list);   /* list: " C H CPP " */
 int  syn_line(int lang, const char *s, int n, int state, unsigned char *role);
 const char *lang_comment(int lang);
@@ -176,7 +178,7 @@ int  is_word_char(int lang, int c);
 
 /* ---- the reference: REF.C ------------------------------------------------- */
 typedef struct {
-    unsigned char lang;        /* L_C, L_ASM, L_PASCAL or L_BASIC */
+    unsigned char lang;        /* L_C, L_CPP, L_ASM, L_PASCAL or L_BASIC */
     const char *name;          /* what's looked up and suggested */
     const char *where;         /* its header, unit or interrupt */
     const char *sig;           /* how it's written */
@@ -185,6 +187,7 @@ typedef struct {
 extern const Ref refs[];
 extern const int nrefs;
 int  ref_lang(int lang);                         /* the reference a file uses, or -1 */
+int  ref_in(int lang, const Ref *r);             /* ... is this entry in it? (C++ has C's too) */
 const Ref *ref_find(int lang, const char *name, int n);
 
 /* ---- suggestions: SUGGEST.C ------------------------------------------------ */
@@ -247,7 +250,7 @@ void msgs_marks(const Buffer *b, int top, int rows, unsigned char *kinds);
 void find_in_files(void);              /* Ctrl+Shift+F */
 
 /* ---- symbols and definitions: SYMBOLS.C ------------------------------------- */
-typedef struct { char name[40]; int line; char kind; } Sym;  /* kind: f d t l s v */
+typedef struct { char name[40]; int line; char kind; } Sym;  /* kind: f d t l s v n (namespace) */
 int  sym_scan(int lang, const Line *ln, int n, Sym *out, int max);
 void sym_list(void);                   /* Ctrl+L */
 void sym_definition(void);             /* F12 */

@@ -5,10 +5,12 @@
 #include <string.h>
 #include "DE.H"
 
-const char *const lang_name[L_COUNT] = { "Text", "C", "Asm", "Pascal", "BASIC", "Batch", "Make", "INI" };
+const char *const lang_name[L_COUNT] = { "Text", "C", "Asm", "Pascal", "BASIC", "Batch", "Make", "INI", "C++" };
 
-/* States a line can end in. */
-enum { S_NORMAL, S_CCOMMENT, S_PBRACE, S_PPAREN };
+/* States a line can end in. S_RAW and above: inside a C++ raw string, and
+ * which delimiter ends it (see raw_state). A state is one byte per line in
+ * the buffer, so there are at most 256. */
+enum { S_NORMAL, S_CCOMMENT, S_PBRACE, S_PPAREN, S_RAW };
 
 static int up(int c) { return toupper((unsigned char)c); }
 static int is_start(int c) { return isalpha((unsigned char)c) || c == '_'; }
@@ -38,6 +40,20 @@ int ext_is(const char *path, const char *list)
     return 0;
 }
 
+/* The C++ library's own headers have no extension (<vector> is a file
+ * called vector), in a folder called c++ (GCC) or cxx (DJGPP). */
+static int std_header(const char *path)
+{
+    char t[DE_PATH];
+    int i;
+    if (strchr(base_name(path), '.'))
+        return 0;
+    for (i = 0; path[i] && i < DE_PATH - 1; i++)
+        t[i] = (char)tolower((unsigned char)(path[i] == '\\' ? '/' : path[i]));
+    t[i] = 0;
+    return strstr(t, "/c++/") || strstr(t, "/cxx/");
+}
+
 int lang_of(const char *path)
 {
     const char *name = base_name(path);
@@ -48,8 +64,10 @@ int lang_of(const char *path)
     u[i] = 0;
     if (!strcmp(u, "MAKEFILE") || !strcmp(u, "GNUMAKEFILE") || ext_is(path, " MAK MK "))
         return L_MAKE;
-    if (ext_is(path, " C H CPP HPP CC CXX HH "))
+    if (ext_is(path, " C H "))
         return L_C;
+    if (ext_is(path, " CPP CXX CC HPP HH HXX ") || std_header(path))
+        return L_CPP;
     if (ext_is(path, " ASM INC S NAS MAC "))
         return L_ASM;
     if (ext_is(path, " PAS PP LPR DPR "))
@@ -63,10 +81,78 @@ int lang_of(const char *path)
     return L_TEXT;
 }
 
+/* Does a line of text start with w? */
+static int starts(const char *s, long n, const char *w)
+{
+    long k = (long)strlen(w);
+    return n >= k && !memcmp(s, w, k);
+}
+
+/* A clear sign of C++ on a line that starts at t[0] (spaces skipped):
+ * class, namespace, template, or #include <name> with no dot in the name
+ * (<vector>, not <stdio.h>). */
+static int cpp_line(const char *t, long n)
+{
+    long k;
+    if (starts(t, n, "class ") || starts(t, n, "namespace ")
+        || (starts(t, n, "template") && n > 8 && (t[8] == '<' || t[8] == ' ')))
+        return 1;
+    if (!starts(t, n, "#include <"))
+        return 0;
+    for (k = 10; k < n && t[k] != '>'; k++)
+        if (t[k] == '.' || t[k] == ' ')
+            return 0;
+    return k < n && k > 10;
+}
+
+/* A .H file is C, unless the first 4 KB of its text show C++ (cpp_line, on
+ * a line that is not inside a comment): DE.TXT, "C and C++". Every other
+ * name decides by itself, as lang_of says. */
+int lang_of_text(const char *path, const char *t, long n)
+{
+    long i, e, k;
+    int comment = 0;
+    if (lang_of(path) != L_C || !ext_is(path, " H "))
+        return lang_of(path);
+    if (n > 4096)
+        n = 4096;
+    for (i = 0; i < n; i = e + 1) {
+        for (e = i; e < n && t[e] != '\n'; e++)
+            ;
+        for (k = i; k < e && (t[k] == ' ' || t[k] == '\t'); k++)
+            ;
+        if (!comment && cpp_line(t + k, e - k))
+            return L_CPP;
+        /* does the line leave a comment open? */
+        for (; k < e; k++) {
+            if (comment) {
+                if (t[k] == '*' && k + 1 < e && t[k + 1] == '/')
+                    comment = 0, k++;
+            } else if (t[k] == '/' && k + 1 < e && t[k + 1] == '/')
+                break;
+            else if (t[k] == '/' && k + 1 < e && t[k + 1] == '*')
+                comment = 1, k++;
+            else if (t[k] == '"' || t[k] == '\'') {
+                char q = t[k];
+                for (k++; k < e && t[k] != q; k++)
+                    if (t[k] == '\\')
+                        k++;
+            }
+        }
+    }
+    return L_C;
+}
+
+/* C and C++ files see each other's names: a C++ program has C headers. */
+int lang_family(int lang)
+{
+    return lang == L_CPP ? L_C : lang;
+}
+
 const char *lang_comment(int lang)
 {
     switch (lang) {
-    case L_C: case L_PASCAL: return "//";
+    case L_C: case L_CPP: case L_PASCAL: return "//";
     case L_ASM: case L_INI: return ";";
     case L_BASIC: return "'";
     case L_BATCH: return "REM";
@@ -186,19 +272,135 @@ static int quoted(const char *s, int n, int i, int esc)
     return i < n ? i + 1 : n;
 }
 
+/* A number: digits, letters (hex, suffixes) and dots, as number() takes
+ * them. In C++ also a digit separator (1'000'000) and the sign of an
+ * exponent (1e-9, 0x1p+3). A user-defined suffix (10_km, 2.5s) is letters,
+ * so it is part of the number already. */
+static int c_number(const char *s, int n, int i, int cpp)
+{
+    int hex = i + 1 < n && s[i] == '0' && (s[i + 1] == 'x' || s[i + 1] == 'X'), start = i;
+    if (!cpp)
+        return number(s, n, i);
+    while (i < n) {
+        int c = (unsigned char)s[i];
+        if (isalnum(c) || c == '.' || c == '_')
+            i++;
+        else if (c == '\'' && i > start && i + 1 < n && isalnum((unsigned char)s[i - 1]) && isalnum((unsigned char)s[i + 1]))
+            i++;
+        else if ((c == '+' || c == '-') && i > start
+                 && (hex ? up(s[i - 1]) == 'P' : up(s[i - 1]) == 'E' && isdigit((unsigned char)s[start])))
+            i++;
+        else
+            break;
+    }
+    return i;
+}
+
+/* After a C++ string or number: a user-defined suffix ("text"s, 5_km). */
+static int suffix(const char *s, int n, int i)
+{
+    if (i < n && is_start(s[i]))
+        while (i < n && is_word(s[i]))
+            i++;
+    return i;
+}
+
+/* C++ raw strings, R"delim( ... )delim": they can cross lines, and only
+ * )delim" ends one, so a line that ends inside one must say which delimiter
+ * it waits for. Each delimiter gets a number the first time it's seen, the
+ * same one for as long as DE runs, and the state is S_RAW + that number.
+ * So a state means the same on every line and in every file, and buf_state
+ * can still stop early when a state comes out as it was. 0 is the empty
+ * delimiter, R"( ... )". */
+#define RAW_LONGEST 16             /* the longest delimiter the standard allows */
+#define RAW_ROOM (256 - S_RAW)
+static char raw_delim[RAW_ROOM][RAW_LONGEST + 1];
+static int nraw = 1;
+
+static int raw_state(const char *d, int n)
+{
+    int i;
+    for (i = 0; i < nraw; i++)
+        if ((int)strlen(raw_delim[i]) == n && !memcmp(raw_delim[i], d, n))
+            return S_RAW + i;
+    if (nraw == RAW_ROOM)
+        return S_RAW;               /* no room left: taken as R"( ... )" */
+    memcpy(raw_delim[nraw], d, n);
+    raw_delim[nraw][n] = 0;
+    return S_RAW + nraw++;
+}
+
+/* Where the raw string of this state ends, looking from s[i]: just past
+ * its )delim", or -1 if not on this line. */
+static int raw_end(const char *s, int n, int i, int state)
+{
+    const char *d = raw_delim[state - S_RAW];
+    int dn = (int)strlen(d);
+    for (; i + dn + 1 < n; i++)
+        if (s[i] == ')' && !memcmp(s + i + 1, d, dn) && s[i + dn + 1] == '"')
+            return i + dn + 2;
+    return -1;
+}
+
+/* s[q] is the " of R"delim(: the ( after the delimiter, or -1 if this is
+ * not a raw string after all. */
+static int raw_open(const char *s, int n, int q)
+{
+    int k;
+    for (k = q + 1; k < n && k - q - 1 <= RAW_LONGEST; k++) {
+        int c = (unsigned char)s[k];
+        if (c == '(')
+            return k;
+        if (c == ' ' || c == ')' || c == '\\' || c < 32)
+            return -1;
+    }
+    return -1;
+}
+
+/* Is the word s[0..n) one of these (" R LR ")? */
+static int one_of(const char *s, int n, const char *list)
+{
+    const char *p;
+    for (p = list; (p = strstr(p, " ")) != NULL && p[1]; p++)
+        if (!strncmp(p + 1, s, n) && p[1 + n] == ' ')
+            return 1;
+    return 0;
+}
+
 static const char *C_KEYWORDS =
     " auto break case const continue default do else enum extern for goto if inline"
     " register restrict return sizeof static struct switch typedef union volatile while"
-    " asm _asm __asm class delete friend namespace new operator private protected public"
-    " template this throw try catch using virtual near far huge interrupt cdecl pascal ";
+    " asm _asm __asm near far huge interrupt cdecl pascal ";
 static const char *C_TYPES =
     " char short int long float double void signed unsigned bool _Bool size_t FILE"
     " int8_t int16_t int32_t int64_t uint8_t uint16_t uint32_t uint64_t BYTE WORD DWORD ";
 static const char *C_CONSTS = " NULL true false TRUE FALSE EOF ";
 
-static int syn_c(const char *s, int n, int state, unsigned char *role)
+/* C++17's keywords, the C++20 ones in common use, the alternative tokens
+ * (and, not ...), and override and final, which are keywords only in some
+ * places but are coloured everywhere. import and module are not coloured:
+ * they are ordinary names in most code. The DOS words (near, far ...) are
+ * Turbo C++'s. */
+static const char *CPP_KEYWORDS =
+    " alignas alignof asm auto break case catch class const consteval constexpr constinit"
+    " const_cast continue co_await co_return co_yield concept decltype default delete do"
+    " dynamic_cast else enum explicit export extern final for friend goto if inline mutable"
+    " namespace new noexcept operator override private protected public register"
+    " reinterpret_cast requires return sizeof static static_assert static_cast struct switch"
+    " template this thread_local throw try typedef typeid typename union using virtual"
+    " volatile while and and_eq bitand bitor compl not not_eq or or_eq xor xor_eq"
+    " _asm __asm near far huge interrupt cdecl pascal ";
+static const char *CPP_TYPES =
+    " bool char char8_t char16_t char32_t wchar_t short int long float double void signed"
+    " unsigned size_t ptrdiff_t nullptr_t FILE int8_t int16_t int32_t int64_t uint8_t"
+    " uint16_t uint32_t uint64_t BYTE WORD DWORD ";
+static const char *CPP_CONSTS = " nullptr true false NULL TRUE FALSE EOF ";
+
+/* C, and C++ (cpp): the same scanner, with C++'s words, raw strings, digit
+ * separators and suffixes. */
+static int syn_c(const char *s, int n, int state, unsigned char *role, int cpp)
 {
-    int i = 0, j, first = 1;
+    int i = 0, j, first = 1, lang = cpp ? L_CPP : L_C;
     if (state == S_CCOMMENT) {
         for (j = 0; j + 1 < n && !(s[j] == '*' && s[j + 1] == '/'); j++)
             ;
@@ -208,6 +410,15 @@ static int syn_c(const char *s, int n, int state, unsigned char *role)
         }
         paint(role, 0, j + 2, A_COMMENT);
         i = j + 2;
+    } else if (state >= S_RAW) {
+        if ((j = raw_end(s, n, 0, state)) < 0) {
+            paint(role, 0, n, A_STRING);
+            return state;
+        }
+        j = suffix(s, n, j);
+        paint(role, 0, j, A_STRING);
+        i = j;
+        first = 0;
     }
     while (i < n) {
         int c = (unsigned char)s[i];
@@ -251,17 +462,36 @@ static int syn_c(const char *s, int n, int state, unsigned char *role)
             first = 0;
         if (c == '"' || c == '\'') {
             j = quoted(s, n, i, 1);
+            if (cpp)
+                j = suffix(s, n, j);
             paint(role, i, j, A_STRING);
             i = j;
         } else if (isdigit(c) || (c == '.' && i + 1 < n && isdigit((unsigned char)s[i + 1]))) {
-            j = number(s, n, i);
+            j = c_number(s, n, i, cpp);
             paint(role, i, j, A_NUMBER);
             i = j;
         } else if (is_start(c)) {
+            int k;
             for (j = i; j < n && is_word(s[j]); j++)
                 ;
-            paint(role, i, j, word_role(L_C, s + i, j - i));
-            i = j;
+            if (cpp && j < n && s[j] == '"' && one_of(s + i, j - i, " R LR uR UR u8R ")
+                && (k = raw_open(s, n, j)) >= 0) {
+                int st = raw_state(s + j + 1, k - j - 1), e = raw_end(s, n, k + 1, st);
+                if (e < 0) {
+                    paint(role, i, n, A_STRING);
+                    return st;
+                }
+                e = suffix(s, n, e);
+                paint(role, i, e, A_STRING);
+                i = e;
+            } else if (cpp && j < n && (s[j] == '"' || s[j] == '\'') && one_of(s + i, j - i, " L u U u8 ")) {
+                k = suffix(s, n, quoted(s, n, j, 1));       /* L"wide", u8"text" */
+                paint(role, i, k, A_STRING);
+                i = k;
+            } else {
+                paint(role, i, j, word_role(lang, s + i, j - i));
+                i = j;
+            }
         } else {
             role[i++] = (unsigned char)(strchr("(){}[];,", c) && c ? A_SYMBOL : A_TEXT);
         }
@@ -616,6 +846,11 @@ static void keys_lists(int lang, KeyTable *k, int count_only)
         keys_add(k, C_TYPES, A_TYPE, count_only);
         keys_add(k, C_CONSTS, A_NUMBER, count_only);
         break;
+    case L_CPP:
+        keys_add(k, CPP_KEYWORDS, A_KEYWORD, count_only);
+        keys_add(k, CPP_TYPES, A_TYPE, count_only);
+        keys_add(k, CPP_CONSTS, A_NUMBER, count_only);
+        break;
     case L_ASM:
         keys_add(k, ASM_OPS, A_KEYWORD, count_only);
         keys_add(k, ASM_REGISTERS, A_TYPE, count_only);
@@ -647,7 +882,7 @@ static int word_role(int lang, const char *s, int n)
     if (!k->ready) {
         int size = 16;
         k->ready = 1;
-        k->nocase = lang != L_C && lang != L_MAKE;
+        k->nocase = lang_nocase(lang);
         keys_lists(lang, k, 1);
         while (size < k->n * 2)
             size *= 2;
@@ -672,7 +907,8 @@ int syn_line(int lang, const char *s, int n, int state, unsigned char *role)
 {
     paint(role, 0, n, A_TEXT);
     switch (lang) {
-    case L_C: return syn_c(s, n, state, role);
+    case L_C: return syn_c(s, n, state, role, 0);
+    case L_CPP: return syn_c(s, n, state, role, 1);
     case L_ASM: return syn_asm(s, n, role);
     case L_PASCAL: return syn_pascal(s, n, state, role);
     case L_BASIC: return syn_basic(s, n, role);
@@ -689,6 +925,7 @@ int lang_lists(int lang, const char *out[4])
 {
     switch (lang) {
     case L_C: out[0] = C_KEYWORDS; out[1] = C_TYPES; out[2] = C_CONSTS; return 3;
+    case L_CPP: out[0] = CPP_KEYWORDS; out[1] = CPP_TYPES; out[2] = CPP_CONSTS; return 3;
     case L_ASM: out[0] = ASM_OPS; out[1] = ASM_DIRECTIVES; return 2;
     case L_PASCAL: out[0] = PAS_KEYWORDS; out[1] = PAS_TYPES; out[2] = PAS_CONSTS; return 3;
     case L_BASIC: out[0] = BAS_KEYWORDS; out[1] = BAS_TYPES; return 2;

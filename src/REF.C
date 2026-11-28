@@ -1,7 +1,7 @@
-/* DE - the reference: what DE knows about the C library, DOS and the BIOS,
- * x86 assembly, Pascal and BASIC. Ctrl+F1 on a word shows its entry; the
- * names are also suggested while typing. One line each: how it's written,
- * and what it does. */
+/* DE - the reference: what DE knows about the C library, the C++ library,
+ * DOS and the BIOS, x86 assembly, Pascal and BASIC. Ctrl+F1 on a word shows
+ * its entry; the names are also suggested while typing. One line each: how
+ * it's written, and what it does. */
 #include <ctype.h>
 #include <string.h>
 #include "DE.H"
@@ -255,6 +255,195 @@ const Ref refs[] = {
     { L_C, "ERR", "<curses.h>", "ERR", "What a curses function gives when it fails, and getch when no key came in time." },
     { L_C, "A_BOLD", "<curses.h>", "A_BOLD, A_REVERSE, A_UNDERLINE, A_BLINK, A_NORMAL", "Attributes, for attron and addch: bright, swapped colours, underlined, blinking, none." },
     { L_C, "ACS_HLINE", "<curses.h>", "ACS_HLINE, ACS_VLINE, ACS_ULCORNER, ACS_URCORNER, ACS_LLCORNER, ACS_LRCORNER, ACS_BLOCK", "Line-drawing characters, for addch, mvhline and the like." },
+    /* ---- C++: the standard library, namespace std. A member is written
+     * class::member (string::size): Ctrl+F1 on size finds it by searching.
+     * No <thread>: DOS has no threads. ---- */
+    { L_CPP, "string", "<string>", "typedef basic_string<char> string;",
+      "Text that grows as needed: std::string s = \"hi\"; s += '!'; s.size() is its length. Compare with ==, join with +." },
+    { L_CPP, "string::size", "<string>", "size_type size() const noexcept;", "The number of characters. length() is the same." },
+    { L_CPP, "string::empty", "<string>", "bool empty() const noexcept;", "True if it has no characters." },
+    { L_CPP, "string::c_str", "<string>", "const char *c_str() const noexcept;",
+      "The text as a C string, ending in 0, for C functions such as printf or fopen. It is good until the string changes." },
+    { L_CPP, "string::substr", "<string>", "basic_string substr(size_type pos = 0, size_type n = npos) const;",
+      "A copy of n characters from pos; all the rest if n is left out." },
+    { L_CPP, "string::find", "<string>", "size_type find(const basic_string &s, size_type pos = 0) const noexcept;",
+      "Where s (or a character, or a C string) first appears, looking from pos; string::npos if nowhere." },
+    { L_CPP, "string::rfind", "<string>", "size_type rfind(const basic_string &s, size_type pos = npos) const noexcept;",
+      "Where s last appears, at or before pos; string::npos if nowhere." },
+    { L_CPP, "string::append", "<string>", "basic_string &append(const basic_string &s);", "Adds s at the end, as += does." },
+    { L_CPP, "string::push_back", "<string>", "void push_back(char c);", "Adds one character at the end." },
+    { L_CPP, "string::insert", "<string>", "basic_string &insert(size_type pos, const basic_string &s);", "Puts s in before position pos." },
+    { L_CPP, "string::erase", "<string>", "basic_string &erase(size_type pos = 0, size_type n = npos);",
+      "Removes n characters from pos; all the rest if n is left out." },
+    { L_CPP, "string::replace", "<string>", "basic_string &replace(size_type pos, size_type n, const basic_string &s);",
+      "Replaces the n characters from pos with s." },
+    { L_CPP, "string::compare", "<string>", "int compare(const basic_string &s) const noexcept;",
+      "Less than 0, 0 or more than 0, as strcmp gives. == and < are plainer." },
+    { L_CPP, "string::clear", "<string>", "void clear() noexcept;", "Makes it empty." },
+    { L_CPP, "string::npos", "<string>", "static const size_type npos = -1;", "\"Not found\", from find; as a length, \"to the end\"." },
+    { L_CPP, "getline", "<string>", "istream &getline(istream &in, string &s);",
+      "Reads a line into s, without its line break. getline(in, s, ';') stops at ';' instead. False at the end of the input." },
+    { L_CPP, "to_string", "<string>", "string to_string(int value);", "A number as text. There is one for each number type: long, double and the rest." },
+    { L_CPP, "stoi", "<string>", "int stoi(const string &s, size_t *idx = 0, int base = 10);",
+      "The number at the start of s. Throws invalid_argument if there is none, out_of_range if it is too big." },
+    { L_CPP, "stod", "<string>", "double stod(const string &s, size_t *idx = 0);", "As stoi, for a double." },
+    { L_CPP, "string_view", "<string_view>", "typedef basic_string_view<char> string_view;",
+      "Characters held somewhere else (a string, a literal), looked at without a copy. It must not outlive them." },
+    { L_CPP, "string_view::substr", "<string_view>", "constexpr basic_string_view substr(size_type pos = 0, size_type n = npos) const;",
+      "A view of part of it. Nothing is copied." },
+    { L_CPP, "string_view::remove_prefix", "<string_view>", "constexpr void remove_prefix(size_type n);", "Moves the start of the view n characters on." },
+    { L_CPP, "string_view::data", "<string_view>", "constexpr const char *data() const noexcept;",
+      "The first character. It is not always followed by a 0: use it with size()." },
+    { L_CPP, "vector", "<vector>", "template<class T, class Allocator = allocator<T>> class vector;",
+      "An array that grows: std::vector<int> v; v.push_back(3); then v[0] and v.size(). The elements are side by side in memory." },
+    { L_CPP, "vector::push_back", "<vector>", "void push_back(const T &x);", "Adds a copy of x at the end." },
+    { L_CPP, "vector::emplace_back", "<vector>", "template<class... Args> reference emplace_back(Args &&... args);",
+      "Makes a new element at the end from these arguments, with no copy." },
+    { L_CPP, "vector::pop_back", "<vector>", "void pop_back();", "Removes the last element. The vector must not be empty." },
+    { L_CPP, "vector::size", "<vector>", "size_type size() const noexcept;", "How many elements it has." },
+    { L_CPP, "vector::empty", "<vector>", "bool empty() const noexcept;", "True if it has no elements." },
+    { L_CPP, "vector::clear", "<vector>", "void clear() noexcept;", "Removes every element." },
+    { L_CPP, "vector::resize", "<vector>", "void resize(size_type n);", "Makes it n elements long. New elements are 0 for numbers, empty for strings." },
+    { L_CPP, "vector::reserve", "<vector>", "void reserve(size_type n);",
+      "Makes room for n elements, so adding up to that many moves nothing. size() stays as it is." },
+    { L_CPP, "vector::at", "<vector>", "reference at(size_type i);", "Element i, checked: throws out_of_range if i >= size(). v[i] is not checked." },
+    { L_CPP, "vector::front", "<vector>", "reference front();", "The first element." },
+    { L_CPP, "vector::back", "<vector>", "reference back();", "The last element." },
+    { L_CPP, "vector::begin", "<vector>", "iterator begin() noexcept;",
+      "Where the elements start, for the algorithms: std::sort(v.begin(), v.end())." },
+    { L_CPP, "vector::end", "<vector>", "iterator end() noexcept;", "Just past the last element." },
+    { L_CPP, "vector::insert", "<vector>", "iterator insert(const_iterator pos, const T &x);", "Puts x in before pos; the elements after it move up." },
+    { L_CPP, "vector::erase", "<vector>", "iterator erase(const_iterator pos);", "Removes the element at pos, and returns where the next one now is." },
+    { L_CPP, "vector::data", "<vector>", "T *data() noexcept;", "The elements as a plain array, for C functions." },
+    { L_CPP, "array", "<array>", "template<class T, size_t N> struct array;",
+      "An array of a fixed size that knows it: std::array<int, 3> a = {1, 2, 3}; a.size() is 3." },
+    { L_CPP, "array::fill", "<array>", "void fill(const T &x);", "Sets every element to x." },
+    { L_CPP, "map", "<map>", "template<class Key, class T, class Compare = less<Key>, class Allocator = allocator<pair<const Key, T>>> class map;",
+      "Values found by key, kept in key order: std::map<std::string, int> m; m[\"x\"] = 1; Each element is a pair: first the key, second the value." },
+    { L_CPP, "map::operator[]", "<map>", "T &operator[](const key_type &k);", "The value for key k. If k is not there, it is added, with 0 or an empty value." },
+    { L_CPP, "map::at", "<map>", "T &at(const key_type &k);", "The value for key k. Throws out_of_range if k is not there." },
+    { L_CPP, "map::insert", "<map>", "pair<iterator, bool> insert(const value_type &x);",
+      "Adds a key and its value if the key is not there yet. second is true if it was added." },
+    { L_CPP, "map::find", "<map>", "iterator find(const key_type &k);", "The element with key k, or end() if there is none." },
+    { L_CPP, "map::count", "<map>", "size_type count(const key_type &k) const;", "1 if key k is there, 0 if not." },
+    { L_CPP, "map::erase", "<map>", "size_type erase(const key_type &k);", "Removes key k. Returns how many were removed: 0 or 1." },
+    { L_CPP, "unordered_map", "<unordered_map>",
+      "template<class Key, class T, class Hash = hash<Key>, class Pred = equal_to<Key>, class Alloc = allocator<pair<const Key, T>>> class unordered_map;",
+      "Values found by key, in a hash table: quick to find, in no order. The same members as map." },
+    { L_CPP, "set", "<set>", "template<class Key, class Compare = less<Key>, class Allocator = allocator<Key>> class set;",
+      "Values kept in order, each one once. insert adds one; count says if it is there." },
+    { L_CPP, "set::insert", "<set>", "pair<iterator, bool> insert(const value_type &x);", "Adds x if it is not there yet. second is true if it was added." },
+    { L_CPP, "pair", "<utility>", "template<class T1, class T2> struct pair;", "Two values together, p.first and p.second." },
+    { L_CPP, "make_pair", "<utility>", "template<class T1, class T2> constexpr pair<V1, V2> make_pair(T1 &&x, T2 &&y);",
+      "A pair of x and y. V1 and V2 are their types without const or &." },
+    { L_CPP, "swap", "<utility>", "template<class T> void swap(T &a, T &b);", "Swaps the values of a and b." },
+    { L_CPP, "move", "<utility>", "template<class T> constexpr remove_reference_t<T> &&move(T &&t) noexcept;",
+      "Lets t be moved from, not copied: after v2 = std::move(v1), v1 is valid but its value is not known (a vector is usually empty)." },
+    { L_CPP, "tuple", "<tuple>", "template<class... Types> class tuple;",
+      "Several values of any types together: std::tuple<int, std::string> t; std::get<0>(t) is the first." },
+    { L_CPP, "make_tuple", "<tuple>", "template<class... Types> constexpr tuple<VTypes...> make_tuple(Types &&... args);",
+      "A tuple of these values. VTypes are their types without const or &." },
+    { L_CPP, "get", "<tuple>", "template<size_t I, class... Types> constexpr tuple_element_t<I, tuple<Types...>> &get(tuple<Types...> &t) noexcept;",
+      "Element I of a tuple, counting from 0. It works on a pair and an array too." },
+    { L_CPP, "tie", "<tuple>", "template<class... Types> constexpr tuple<Types &...> tie(Types &... args) noexcept;",
+      "A tuple of references: std::tie(a, b) = f(); sets a and b from the pair or tuple f returns." },
+    { L_CPP, "optional", "<optional>", "template<class T> class optional;",
+      "A T, or nothing: std::optional<int> r = f(); if (r) use *r. std::nullopt is nothing." },
+    { L_CPP, "optional::value", "<optional>", "constexpr T &value() &;", "The value. Throws bad_optional_access if there is none." },
+    { L_CPP, "optional::value_or", "<optional>", "template<class U> constexpr T value_or(U &&other) const &;", "The value, or other if there is none." },
+    { L_CPP, "optional::has_value", "<optional>", "constexpr bool has_value() const noexcept;", "True if it holds a value." },
+    { L_CPP, "nullopt", "<optional>", "inline constexpr nullopt_t nullopt;", "An optional with nothing in it: return std::nullopt;" },
+    { L_CPP, "unique_ptr", "<memory>", "template<class T, class Deleter = default_delete<T>> class unique_ptr;",
+      "Owns one object, and deletes it when the unique_ptr goes away. It can be moved, not copied." },
+    { L_CPP, "unique_ptr::get", "<memory>", "pointer get() const noexcept;", "The plain pointer. The unique_ptr still owns the object." },
+    { L_CPP, "unique_ptr::reset", "<memory>", "void reset(pointer p = pointer()) noexcept;",
+      "Deletes the object it owns, and owns p instead (nothing, if p is left out)." },
+    { L_CPP, "shared_ptr", "<memory>", "template<class T> class shared_ptr;",
+      "Shares one object with other shared_ptrs. The last of them to go away deletes it." },
+    { L_CPP, "shared_ptr::use_count", "<memory>", "long use_count() const noexcept;", "How many shared_ptrs share the object." },
+    { L_CPP, "make_unique", "<memory>", "template<class T, class... Args> unique_ptr<T> make_unique(Args &&... args);",
+      "Makes a T from these arguments, owned by a unique_ptr: auto p = std::make_unique<Foo>(1, 2);" },
+    { L_CPP, "make_shared", "<memory>", "template<class T, class... Args> shared_ptr<T> make_shared(Args &&... args);",
+      "Makes a T from these arguments, owned by a shared_ptr." },
+    { L_CPP, "cout", "<iostream>", "extern ostream cout;", "The standard output: std::cout << \"x = \" << x << '\\n';" },
+    { L_CPP, "cin", "<iostream>", "extern istream cin;",
+      "The standard input: std::cin >> n; reads a number, after any spaces. if (!(std::cin >> n)) is true when there was no number." },
+    { L_CPP, "cerr", "<iostream>", "extern ostream cerr;", "The error output, not buffered: for messages." },
+    { L_CPP, "endl", "<ostream>", "template<class charT, class traits> basic_ostream<charT, traits> &endl(basic_ostream<charT, traits> &os);",
+      "Writes a line break and flushes the stream. '\\n' alone does not flush, so it is quicker." },
+    { L_CPP, "ifstream", "<fstream>", "typedef basic_ifstream<char> ifstream;",
+      "A file to read: std::ifstream in(\"DATA.TXT\"); if (!in) it did not open. Read with >> or getline." },
+    { L_CPP, "ofstream", "<fstream>", "typedef basic_ofstream<char> ofstream;",
+      "A file to write: std::ofstream out(\"OUT.TXT\"); out << x; It is closed when it goes away." },
+    { L_CPP, "fstream", "<fstream>", "typedef basic_fstream<char> fstream;", "A file to read and write." },
+    { L_CPP, "ifstream::is_open", "<fstream>", "bool is_open() const;", "True if the file is open." },
+    { L_CPP, "stringstream", "<sstream>", "typedef basic_stringstream<char> stringstream;",
+      "A string written to with << and read from with >>, as a stream. str() is its text." },
+    { L_CPP, "istringstream", "<sstream>", "typedef basic_istringstream<char> istringstream;",
+      "Reads from a string as cin does: std::istringstream in(\"1 2\"); in >> a >> b;" },
+    { L_CPP, "ostringstream", "<sstream>", "typedef basic_ostringstream<char> ostringstream;", "Builds a string with <<. str() gives it." },
+    { L_CPP, "stringstream::str", "<sstream>", "basic_string<char> str() const;", "The text in the stream." },
+    { L_CPP, "sort", "<algorithm>", "template<class RandomIt> void sort(RandomIt first, RandomIt last);",
+      "Sorts first to last into order, smallest first: std::sort(v.begin(), v.end()). A third argument, a function, gives another order." },
+    { L_CPP, "find", "<algorithm>", "template<class InputIt, class T> InputIt find(InputIt first, InputIt last, const T &value);",
+      "The first element equal to value, or last if there is none." },
+    { L_CPP, "find_if", "<algorithm>", "template<class InputIt, class Pred> InputIt find_if(InputIt first, InputIt last, Pred p);",
+      "The first element for which p(element) is true, or last if there is none." },
+    { L_CPP, "for_each", "<algorithm>", "template<class InputIt, class Function> Function for_each(InputIt first, InputIt last, Function f);",
+      "Calls f on each element. A range for loop, for (auto &x : v), is often plainer." },
+    { L_CPP, "count", "<algorithm>",
+      "template<class InputIt, class T> typename iterator_traits<InputIt>::difference_type count(InputIt first, InputIt last, const T &value);",
+      "How many elements are equal to value." },
+    { L_CPP, "copy", "<algorithm>", "template<class InputIt, class OutputIt> OutputIt copy(InputIt first, InputIt last, OutputIt d_first);",
+      "Copies first to last to d_first on, which must have room (or be std::back_inserter(v)). Returns the end of what it wrote." },
+    { L_CPP, "reverse", "<algorithm>", "template<class BidirIt> void reverse(BidirIt first, BidirIt last);", "Reverses the order of the elements." },
+    { L_CPP, "min", "<algorithm>", "template<class T> constexpr const T &min(const T &a, const T &b);",
+      "The smaller of a and b; a if they are equal. Both must be the same type: std::min(1, 2.0) does not compile." },
+    { L_CPP, "max", "<algorithm>", "template<class T> constexpr const T &max(const T &a, const T &b);",
+      "The larger of a and b; a if they are equal. Both must be the same type." },
+    { L_CPP, "accumulate", "<numeric>", "template<class InputIt, class T> T accumulate(InputIt first, InputIt last, T init);",
+      "init plus every element: std::accumulate(v.begin(), v.end(), 0). The sum has init's type: give 0.0 to add doubles." },
+    { L_CPP, "back_inserter", "<iterator>", "template<class Container> back_insert_iterator<Container> back_inserter(Container &c);",
+      "Somewhere for copy and the like to write to: each element written is added to c with push_back." },
+    /* <cmath>: C's functions, with a float, a double and a long double one each */
+    { L_CPP, "sqrt", "<cmath>", "float sqrt(float x); double sqrt(double x); long double sqrt(long double x);",
+      "The square root, in the type of x: std::sqrt(2.0f) is a float. An int gives a double. g++ links the maths library itself." },
+    { L_CPP, "pow", "<cmath>", "float pow(float x, float y); double pow(double x, double y); long double pow(long double x, long double y);",
+      "x to the power y, in the wider of their types; an int counts as a double." },
+    { L_CPP, "abs", "<cmath>, <cstdlib>", "int abs(int x); long abs(long x); float abs(float x); double abs(double x);",
+      "The value of x without its sign, in the type of x (long long and long double too)." },
+    { L_CPP, "fabs", "<cmath>", "float fabs(float x); double fabs(double x); long double fabs(long double x);", "The value of x without its sign." },
+    { L_CPP, "floor", "<cmath>", "float floor(float x); double floor(double x); long double floor(long double x);", "x rounded down." },
+    { L_CPP, "ceil", "<cmath>", "float ceil(float x); double ceil(double x); long double ceil(long double x);", "x rounded up." },
+    { L_CPP, "round", "<cmath>", "float round(float x); double round(double x); long double round(long double x);",
+      "x rounded to the nearest whole number; halfway goes away from 0." },
+    { L_CPP, "sin", "<cmath>", "float sin(float x); double sin(double x); long double sin(long double x);", "The sine of x radians." },
+    { L_CPP, "cos", "<cmath>", "float cos(float x); double cos(double x); long double cos(long double x);", "The cosine of x radians." },
+    { L_CPP, "tan", "<cmath>", "float tan(float x); double tan(double x); long double tan(long double x);", "The tangent of x radians." },
+    { L_CPP, "atan2", "<cmath>", "float atan2(float y, float x); double atan2(double y, double x); long double atan2(long double y, long double x);",
+      "The angle of the point (x, y), in radians, -pi to pi." },
+    { L_CPP, "exp", "<cmath>", "float exp(float x); double exp(double x); long double exp(long double x);", "e to the power x." },
+    { L_CPP, "log", "<cmath>", "float log(float x); double log(double x); long double log(long double x);", "The natural logarithm." },
+    { L_CPP, "fmod", "<cmath>", "float fmod(float x, float y); double fmod(double x, double y); long double fmod(long double x, long double y);",
+      "The remainder of x / y." },
+    { L_CPP, "hypot", "<cmath>", "float hypot(float x, float y); double hypot(double x, double y); long double hypot(long double x, long double y);",
+      "The length of the line from (0, 0) to (x, y). C++17 adds hypot(x, y, z)." },
+    /* <chrono>: namespace std::chrono */
+    { L_CPP, "chrono", "<chrono>", "namespace std::chrono", "Clocks and lengths of time: steady_clock, duration, duration_cast, seconds, milliseconds." },
+    { L_CPP, "steady_clock", "<chrono>", "class chrono::steady_clock;",
+      "A clock that never goes back, for timing: auto t0 = std::chrono::steady_clock::now(); then now() - t0 is how long it took. How fine its steps are depends on the system." },
+    { L_CPP, "steady_clock::now", "<chrono>", "static time_point now() noexcept;", "The time now. Take one from another to get a duration." },
+    { L_CPP, "system_clock", "<chrono>", "class chrono::system_clock;",
+      "The time of day and the date. It can jump when the clock is set. system_clock::to_time_t gives a time_t for <ctime>." },
+    { L_CPP, "duration", "<chrono>", "template<class Rep, class Period = ratio<1>> class chrono::duration;",
+      "A length of time: a count of ticks of a period. seconds and milliseconds are durations." },
+    { L_CPP, "duration::count", "<chrono>", "constexpr rep count() const;", "The number of ticks: std::chrono::seconds(3).count() is 3." },
+    { L_CPP, "duration_cast", "<chrono>", "template<class ToDuration, class Rep, class Period> constexpr ToDuration duration_cast(const duration<Rep, Period> &d);",
+      "A duration in other units, cut towards 0: std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count()." },
+    { L_CPP, "seconds", "<chrono>", "typedef duration<signed integer type of at least 35 bits> seconds;",
+      "A duration in seconds. With using namespace std::chrono_literals; 5s is seconds(5)." },
+    { L_CPP, "milliseconds", "<chrono>", "typedef duration<signed integer type of at least 45 bits, milli> milliseconds;",
+      "A duration in milliseconds. With std::chrono_literals, 250ms is milliseconds(250)." },
     /* ---- x86 assembly ---- */
     { L_ASM, "mov", "x86", "mov dest, src", "Copies src to dest: a register, memory or a number. Both the same size." },
     { L_ASM, "add", "x86", "add dest, src", "dest = dest + src; sets the flags (CF on a carry)." },
@@ -406,21 +595,32 @@ const int nrefs = (int)(sizeof refs / sizeof refs[0]);
 
 int ref_lang(int lang)
 {
-    return lang == L_C || lang == L_ASM || lang == L_PASCAL || lang == L_BASIC ? lang : -1;
+    return lang == L_C || lang == L_CPP || lang == L_ASM || lang == L_PASCAL || lang == L_BASIC ? lang : -1;
 }
 
+/* Is the entry in the reference a file of this language uses? A C++ file
+ * has the C library as well as its own. */
+int ref_in(int lang, const Ref *r)
+{
+    int rl = ref_lang(lang);
+    return rl >= 0 && (r->lang == rl || (rl == L_CPP && r->lang == L_C));
+}
+
+/* The entry for a name. In C++, its own entry comes first: std::sqrt
+ * (float, double, long double) before C's sqrt (double). */
 const Ref *ref_find(int lang, const char *name, int n)
 {
-    int i, k, rl = ref_lang(lang);
-    for (i = 0; i < nrefs; i++) {
-        const Ref *r = &refs[i];
-        if (r->lang != rl || (int)strlen(r->name) != n)
-            continue;
-        for (k = 0; k < n; k++)
-            if (lang_nocase(lang) ? toupper((unsigned char)r->name[k]) != toupper((unsigned char)name[k]) : r->name[k] != name[k])
-                break;
-        if (k == n)
-            return r;
-    }
+    int i, k, pass, rl = ref_lang(lang);
+    for (pass = 0; pass < 2; pass++)
+        for (i = 0; i < nrefs; i++) {
+            const Ref *r = &refs[i];
+            if (r->lang != (pass ? L_C : rl) || (pass && rl != L_CPP) || (int)strlen(r->name) != n)
+                continue;
+            for (k = 0; k < n; k++)
+                if (lang_nocase(lang) ? toupper((unsigned char)r->name[k]) != toupper((unsigned char)name[k]) : r->name[k] != name[k])
+                    break;
+            if (k == n)
+                return r;
+        }
     return NULL;
 }

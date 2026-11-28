@@ -708,7 +708,7 @@ static int ends_block(const Buffer *b, const Line *L, int upto)
         j--;
     if (j < 0)
         return 0;
-    if (L->s[j] == '{' && (b->lang == L_C || b->lang == L_MAKE))
+    if (L->s[j] == '{' && (lang_family(b->lang) == L_C || b->lang == L_MAKE))
         return 1;
     if (b->lang == L_PASCAL && j >= 4) {
         const char *w = L->s + j - 4;
@@ -729,7 +729,7 @@ static void type_char(Buffer *b, int ch)
     if (ch == ' ' && b->cx > 0 && L->s[b->cx - 1] != ' ')
         buf_group(b);            /* a word at a time */
     /* A closing brace on a line of its own steps back one level. */
-    if (ch == '}' && opt_auto && b->lang == L_C && b->cx > 0 && indent_of(L) >= b->cx) {
+    if (ch == '}' && opt_auto && lang_family(b->lang) == L_C && b->cx > 0 && indent_of(L) >= b->cx) {
         int rm = 0;
         if (L->s[b->cx - 1] == '\t')
             rm = 1;

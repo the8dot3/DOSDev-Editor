@@ -999,8 +999,349 @@ static void test_speed(void)
     CHECK("...and the file is still sound", buf_check(files[cur]) && words_check(files[cur]) && opt_suggest == 1);
 }
 
-/* Random editing, then undo all of it and redo all of it. */
-static void test_random(void)
+/* ---- C++ ------------------------------------------------------------------------ */
+
+static int at_role(int r, const char *s, int off, int role)
+{
+    int c = col_of(r, s);
+    if (c < 0) {
+        printf("        [%s] is not on row %d: [%s]\n", s, r, row_text(r));
+        return 0;
+    }
+    return attr_at(r, c + off) == attr[role];
+}
+
+static void test_cpp_language(void)
+{
+    static char big[5000];
+    int i;
+    puts("C++: which files, and their colours");
+    CHECK("C++ by its extension, in any case", lang_of("A.CPP") == L_CPP && lang_of("a.cxx") == L_CPP && lang_of("B.Cc") == L_CPP
+          && lang_of("C.HPP") == L_CPP && lang_of("d.hh") == L_CPP && lang_of("E.HXX") == L_CPP);
+    CHECK("...C by its", lang_of("F.C") == L_C && lang_of("g.h") == L_C && lang_of("README") == L_TEXT);
+    CHECK("...and the C++ library's headers, which have none", lang_of("c:/djgpp/include/cxx/9/vector") == L_CPP
+          && lang_of("/usr/include/c++/12/map") == L_CPP && lang_of("C:\\DJGPP\\INCLUDE\\CXX\\9\\TUPLE") == L_CPP);
+    CHECK(".H: C", lang_of_text("X.H", "#include <stdio.h>\nint f(void);\n", 32) == L_C);
+    CHECK(".H: class makes it C++", lang_of_text("X.H", "#pragma once\n  class Foo {\n};\n", 28) == L_CPP);
+    CHECK("...so do namespace and template", lang_of_text("X.H", "namespace a {\n", 14) == L_CPP
+          && lang_of_text("X.H", "template<class T>\n", 18) == L_CPP && lang_of_text("X.H", "template <class T>\n", 19) == L_CPP);
+    CHECK("...and #include <vector>, a name with no dot", lang_of_text("X.H", "#include <vector>\n", 18) == L_CPP);
+    CHECK("...not #include <sys/types.h>", lang_of_text("X.H", "#include <sys/types.h>\n", 23) == L_C);
+    CHECK("...not class in a comment, or a word that starts with it", lang_of_text("X.H", "/* the\nclass Foo */\n// class X\nint classes;\n", 43) == L_C);
+    for (i = 0; i < 4096; i += 8)
+        memcpy(big + i, "int aa;\n", 8);
+    memcpy(big + 4096, "class Foo {\n", 12);
+    CHECK("...only the first 4 KB are looked at", lang_of_text("X.H", big, 4108) == L_C);
+    CHECK("a .C file is C whatever it says", lang_of_text("X.C", "class Foo {\n", 12) == L_C);
+
+    fresh();
+    write_file("SIGN.H", "#include <string>\nstd::string name();\n", -1);
+    ed_open(path("SIGN.H"), 0);
+    run();
+    CHECK("a .H with C++ in it says C++ on the status line", files[cur]->lang == L_CPP && strstr(row_text(24), " C++ LF"));
+    write_file("PLAIN.H", "int plain(void);\n", -1);
+    ed_open(path("PLAIN.H"), 0);
+    run();
+    CHECK("...one without says C", files[cur]->lang == L_C && strstr(row_text(24), " C LF"));
+    remove(path("NEWH.H"));
+    ed_open(path("NEWH.H"), 0);
+    type("namespace geo {\n");
+    run();
+    CHECK("a new .H is C while it is typed", files[cur]->lang == L_C && attr_at(2, col_of(2, "namespace")) == attr[A_TEXT]);
+    keys(1, DK_F2);
+    run();
+    CHECK("...and C++ once saved with C++ in it", files[cur]->lang == L_CPP && attr_at(2, col_of(2, "namespace")) == attr[A_KEYWORD]);
+
+    fresh();
+    write_file("COL.CPP",
+        "#include <vector>\n"
+        "class Point final : public Base { };\n"
+        "auto s = R\"xy(one )\" still\n"
+        "two )x\" more\n"
+        ")xy\"s; int k = 1'000'000;\n"
+        "auto t = R\"(a)\" + u8\"b\" + \"c\"s + L'd';\n"
+        "double d = 1.5e-3 + 0x1Fu + 0b1010 + 10_km;\n"
+        "p = nullptr; q = static_cast<int>(x) and not y;\n"
+        "concept char8_t co_await import module override\n"
+        "/* a\n"
+        "   b */ int z; // done\n", -1);
+    ed_open(path("COL.CPP"), 0);
+    run();
+    keys(1, DK_HOME);           /* (the line Saved NEWH.H goes) */
+    run();
+    CHECK("C++: the status line says so", strstr(row_text(24), " C++ LF"));
+    CHECK("C++: #include <vector> as in C", at_role(2, "#include", 0, A_PREPROC) && at_role(2, "<vector>", 0, A_STRING));
+    CHECK("C++: class, final and public are keywords", at_role(3, "class", 0, A_KEYWORD) && at_role(3, "final", 0, A_KEYWORD)
+          && at_role(3, "public", 0, A_KEYWORD) && at_role(3, "Point", 0, A_TEXT));
+    CHECK("C++: a raw string", at_role(4, "R\"xy", 0, A_STRING) && at_role(4, "still", 0, A_STRING));
+    CHECK("...goes on over lines, past a )\" that does not end it", at_role(5, "two", 0, A_STRING) && at_role(5, "more", 0, A_STRING));
+    CHECK("...to its own )delim\", with a suffix", at_role(6, ")xy\"s", 4, A_STRING) && at_role(6, "int", 0, A_TYPE));
+    CHECK("C++: digit separators are part of the number", at_role(6, "1'000'000", 1, A_NUMBER) && at_role(6, "1'000'000", 8, A_NUMBER)
+          && at_role(6, "1'000'000;", 9, A_SYMBOL));
+    CHECK("C++: R\"( ... )\" on one line, u8\"..\", \"..\"s and L'.'", at_role(7, "R\"(a)\"", 5, A_STRING) && at_role(7, "R\"(a)\" +", 7, A_TEXT)
+          && at_role(7, "u8\"b\"", 0, A_STRING) && at_role(7, "\"c\"s", 3, A_STRING) && at_role(7, "L'd'", 0, A_STRING));
+    CHECK("C++: numbers with exponents, hex, binary and suffixes", at_role(8, "1.5e-3", 4, A_NUMBER) && at_role(8, "1.5e-3", 5, A_NUMBER)
+          && at_role(8, "0x1Fu", 4, A_NUMBER) && at_role(8, "0b1010", 5, A_NUMBER) && at_role(8, "10_km", 4, A_NUMBER));
+    CHECK("C++: nullptr, a cast, and and not", at_role(9, "nullptr", 0, A_NUMBER) && at_role(9, "static_cast", 0, A_KEYWORD)
+          && at_role(9, "and", 0, A_KEYWORD) && at_role(9, "not", 0, A_KEYWORD));
+    CHECK("C++20: concept, char8_t, co_await; import and module are names", at_role(10, "concept", 0, A_KEYWORD)
+          && at_role(10, "char8_t", 0, A_TYPE) && at_role(10, "co_await", 0, A_KEYWORD) && at_role(10, "import", 0, A_TEXT)
+          && at_role(10, "module", 0, A_TEXT) && at_role(10, "override", 0, A_KEYWORD));
+    CHECK("C++: comments as in C", at_role(12, "b */", 0, A_COMMENT) && at_role(12, "int", 0, A_TYPE) && at_role(12, "// done", 0, A_COMMENT));
+    CHECK("...and the states kept for the lines are right", buf_state_check(files[cur]));
+    write_file("CW.C", "class Foo { public: new delete this; };\nint x = template + nullptr;\nchar *s = R\"x(;\nint y;\n", -1);
+    ed_open(path("CW.C"), 0);
+    run();
+    CHECK("C: C++'s words are not keywords in a .C file", at_role(2, "class", 0, A_TEXT) && at_role(2, "public", 0, A_TEXT)
+          && at_role(2, "new", 0, A_TEXT) && at_role(2, "this", 0, A_TEXT) && at_role(3, "template", 0, A_TEXT)
+          && at_role(3, "nullptr", 0, A_TEXT) && at_role(3, "int", 0, A_TYPE));
+    CHECK("...nor is there a raw string", at_role(5, "int", 0, A_TYPE));
+}
+
+static void test_cpp_symbols(void)
+{
+    static Sym s[64];
+    int n;
+    puts("C++: symbols and definitions");
+    n = scan(L_CPP,
+        "#include <vector>\n"                                     /* 0 */
+        "namespace geo {\n"
+        "\n"
+        "class Point : public Shape {\n"
+        "public:\n"
+        "    Point(double x, double y) : x_(x), y_(y) {}\n"           /* 5 */
+        "    ~Point() {}\n"
+        "    double len() const;\n"
+        "    double x() const { return x_; }\n"
+        "    Point operator+(const Point &o) const\n"
+        "    {\n"                                                 /* 10 */
+        "        return Point(x_ + o.x_, y_ + o.y_);\n"
+        "    }\n"
+        "    explicit operator bool() const { return x_ != 0; }\n"
+        "private:\n"
+        "    double x_, y_;\n"                                    /* 15 */
+        "};\n"
+        "\n"
+        "double Point::len() const\n"
+        "{\n"
+        "    if (x_) return 1;\n"                                 /* 20 */
+        "    return 0;\n"
+        "}\n"
+        "\n"
+        "template <class T>\n"
+        "T biggest(const std::vector<T> &v)\n"                    /* 25 */
+        "{\n"
+        "    return v[0];\n"
+        "}\n"
+        "\n"
+        "template <class T> class Stack {\n"                      /* 30 */
+        "    void push(T x) { items.push_back(x); }\n"
+        "};\n"
+        "\n"
+        "template <class T>\n"
+        "void Stack<T>::pop()\n"                                  /* 35 */
+        "{\n"
+        "}\n"
+        "\n"
+        "enum class Colour { Red, Green };\n"
+        "struct Pair;\n"                                          /* 40 */
+        "using Names = std::vector<std::string>;\n"
+        "}  // namespace geo\n"
+        "\n"
+        "int main(int argc,\n"
+        "         char **argv)\n"                                 /* 45 */
+        "{\n"
+        "    geo::Point p(1, 2);\n"
+        "    return 0;\n"
+        "}\n"
+        "bool operator==(const geo::Point &a, const geo::Point &b) { return true; }\n"   /* 50 */
+        "typedef struct {\n"
+        "    int y;\n"
+        "} Thing;\n"
+        "#define TWICE(x) ((x) * 2)\n", s);
+    CHECK("C++: a namespace, a class and its constructor and destructor", has_sym(s, n, "geo", 1, 'n') && has_sym(s, n, "Point", 3, 't')
+          && has_sym(s, n, "Point::Point", 5, 'f') && has_sym(s, n, "Point::~Point", 6, 'f'));
+    CHECK("...methods defined in the class body, operators among them", has_sym(s, n, "Point::x", 8, 'f')
+          && has_sym(s, n, "Point::operator+", 9, 'f') && has_sym(s, n, "Point::operator bool", 13, 'f'));
+    CHECK("...and one defined outside it, as Foo::bar", has_sym(s, n, "Point::len", 18, 'f'));
+    CHECK("...templates, by their names alone", has_sym(s, n, "biggest", 25, 'f') && has_sym(s, n, "Stack", 30, 't')
+          && has_sym(s, n, "Stack::push", 31, 'f') && has_sym(s, n, "Stack::pop", 35, 'f'));
+    CHECK("...enum class, using, a function over two lines, a free operator, typedef and #define",
+          has_sym(s, n, "Colour", 39, 't') && has_sym(s, n, "Names", 41, 't') && has_sym(s, n, "main", 44, 'f')
+          && has_sym(s, n, "operator==", 50, 'f') && has_sym(s, n, "Thing", 53, 't') && has_sym(s, n, "TWICE", 54, 'd'));
+    CHECK("...and nothing else: not declarations, not what is inside a function", n == 18);
+    if (n != 18) {
+        int i;
+        for (i = 0; i < n; i++)
+            printf("        %c %d %s\n", s[i].kind, s[i].line, s[i].name);
+    }
+
+    mkdir(path("CPPP"), 0777);
+    write_file("CPPP/project.ini", "[project]\nname = Geometry\n", -1);
+    write_file("CPPP/GEO.HPP", "#pragma once\nnamespace geo {\nclass Point {\npublic:\n    double area() const { return 0; }\n"
+               "    double len() const;\n};\n}\n", -1);
+    write_file("CPPP/GEO.CPP", "#include \"GEO.HPP\"\n\nnamespace geo {\ndouble Point::len() const\n{\n    return 1;\n}\n}\n", -1);
+    write_file("CPPP/UTIL.C", "int util_c(void)\n{\n    return 2;\n}\n", -1);
+    write_file("CPPP/MAIN.CPP", "#include \"GEO.HPP\"\nextern \"C\" int util_c(void);\n\nint main()\n{\n"
+               "    geo::Point p;\n    return p.len() + util_c();\n}\n", -1);
+    fresh();
+    ed_open(path("CPPP/GEO.HPP"), 0);
+    keys(1, KM_CTRL | 'L');
+    run();
+    CHECK("Ctrl-L in a C++ header lists its classes and methods", t_snapped && snap_has("namespace") && snap_has("Point::area")
+          && snap_has("Point  "));
+    fresh();
+    ed_open(path("CPPP/MAIN.CPP"), 0);
+    ed_goto(7, 14);
+    keys(1, DK_F12);
+    run();
+    CHECK("F12 on a method goes to Foo::bar, in a file that isn't open", strstr(files[cur]->path, "GEO.CPP") && files[cur]->cy == 3
+          && files[cur]->cx == 7);
+    fresh();
+    ed_open(path("CPPP/MAIN.CPP"), 0);
+    ed_goto(7, 23);
+    keys(1, DK_F12);
+    run();
+    CHECK("...and from C++ to a function in a C file", strstr(files[cur]->path, "UTIL.C") && files[cur]->cy == 0);
+    mkdir(path("DJ"), 0777);
+    mkdir(path("DJ/include"), 0777);
+    mkdir(path("DJ/include/cxx"), 0777);
+    mkdir(path("DJ/include/cxx/9"), 0777);
+    write_file("DJ/include/cxx/9/vector", "// <vector>\nnamespace std {\ntemplate<class T> class vector {\n};\n}\n", -1);
+    setenv("DJDIR", path("DJ"), 1);
+    fresh();
+    ed_open(path("CPPP/VEC.CPP"), 0);
+    type("#include <vector>");
+    keys(1, DK_F12);
+    run();
+    unsetenv("DJDIR");
+    CHECK("F12 on #include <vector> opens DJGPP's, as C++", strstr(files[cur]->path, "include/cxx/9/vector") && files[cur]->lang == L_CPP);
+}
+
+static void test_cpp_suggestions(void)
+{
+    const Ref *r;
+    int i, ok;
+    puts("C++: suggestions and the reference");
+    r = ref_find(L_CPP, "make_unique", 11);
+    CHECK("the reference has the C++ library, with each entry's header", r && !strcmp(r->where, "<memory>") && r->lang == L_CPP);
+    r = ref_find(L_CPP, "sqrt", 4);
+    CHECK("...C++'s own entry first: <cmath>'s sqrt, not <math.h>'s", r && !strcmp(r->where, "<cmath>"));
+    CHECK("...and C's library too, in a C++ file", ref_find(L_CPP, "printf", 6) && ref_find(L_CPP, "printf", 6)->lang == L_C);
+    CHECK("...but not C++'s in a C file", ref_find(L_C, "vector", 6) == NULL && ref_find(L_C, "sqrt", 4)->lang == L_C);
+    CHECK("...and no threads, which DOS has not", ref_find(L_CPP, "thread", 6) == NULL);
+    fresh();
+    ed_open(path("SUG.CPP"), 0);
+    type("nullp");
+    run();
+    CHECK("a C++ keyword is suggested in a C++ file", strstr(row_text(2), "nullptr") && attr_at(2, col_of(2, "tr")) == attr[A_GHOST]);
+    keys(2, KM_CTRL | 'A', DK_DEL);
+    type("int vecky_word;\nvec");
+    run();
+    CHECK("...a word from the file, as in C", strstr(row_text(24), "Tab vecky_word"));
+    keys(2, DK_END, DK_ENTER);
+    type("std::vec");
+    run();
+    CHECK("after std::, the reference's std names: vector", strstr(row_text(24), "Tab vector") && strstr(row_text(24), "class vector"));
+    keys(2, DK_END, DK_ENTER);
+    type("std::");
+    keys(1, KM_CTRL | ' ');
+    run();
+    CHECK("...Ctrl-Space right after std:: lists them all", t_snapped && strstr(snap_row(7), " abs ") && strstr(snap_row(8), " cin "));
+    keys(1, 'v');
+    keys(1, KM_CTRL | ' ');
+    run();
+    for (i = 6, ok = 1; i < 24; i++)
+        if (strstr(snap_row(i), "vecky_word") || strstr(snap_row(i), "volatile"))
+            ok = 0;
+    CHECK("...std::v and Ctrl-Space: vector, not the file's words or keywords", t_snapped && strstr(snap_row(7), " vector ") && ok);
+    keys(2, KM_CTRL | 'A', DK_DEL);
+    type("auto t0 = std::chrono::stea");
+    run();
+    CHECK("...after std::chrono:: too", strstr(row_text(24), "Tab steady_clock"));
+    keys(2, KM_CTRL | 'A', DK_DEL);
+    type("std::sort(v.begin(), ");
+    run();
+    CHECK("inside std::sort's brackets, the status line shows it", strstr(row_text(24), "void sort(RandomIt first, RandomIt last);"));
+    keys(2, KM_CTRL | 'A', DK_DEL);
+    type("v.push_back");
+    keys(1, KM_CTRL | DK_F1);
+    run();
+    CHECK("Ctrl-F1 on a member searches the reference: vector::push_back", t_snapped && snap_has("vector::push_back") && snap_has("<vector>"));
+    keys(1, KM_SHIFT | DK_F1);
+    run();
+    CHECK("Shift-F1 in a C++ file: the C++ reference", t_snapped && snap_has("Reference: C++"));
+    fresh();
+    ed_open(path("SUG.C"), 0);
+    type("nullp");
+    run();
+    CHECK("C++'s keywords are not suggested in a C file", sug_ghost(files[cur], NULL) == NULL);
+}
+
+static void test_cpp_build(void)
+{
+    puts("C++: building, and what g++ says");
+    /* g++ 12.2 (the DJGPP cross compiler), as it printed these */
+    CHECK("g++ 12: In member function is text", parsed("HELLO.CPP: In member function 'void Foo::bar()':", M_TEXT, NULL, 0, 0, NULL));
+    CHECK("g++ 12: an error with a column", parsed("HELLO.CPP:15:13: error: 'y' was not declared in this scope", M_ERROR, "HELLO.CPP", 15, 13,
+          "'y' was not declared in this scope"));
+    CHECK("g++ 12: the line it shows, and the ^ under it, are text", parsed("   15 |     int x = y;", M_TEXT, NULL, 0, 0, NULL)
+          && parsed("      |             ^", M_TEXT, NULL, 0, 0, NULL));
+    CHECK("...even when the line says error:", parsed("   12 |     error: return -1;", M_TEXT, NULL, 0, 0, NULL));
+    CHECK("g++ 12: a warning", parsed("HELLO.CPP:26:11: warning: comparison of integer expressions of different signedness: 'unsigned int' and 'int' [-Wsign-compare]",
+          M_WARNING, "HELLO.CPP", 26, 11, "comparison of integer expressions of different signedness: 'unsigned int' and 'int' [-Wsign-compare]"));
+    CHECK("g++ 12: In instantiation of is text", parsed("HELLO.CPP: In instantiation of 'T maxof(T, T) [with T = int]':", M_TEXT, NULL, 0, 0, NULL));
+    CHECK("g++ 12: required from here is a note, at its place", parsed("HELLO.CPP:23:10:   required from here", M_NOTE, "HELLO.CPP", 23, 10, "required from here"));
+    CHECK("g++ 12: In file included from is text", parsed("In file included from TUP.CPP:1:", M_TEXT, NULL, 0, 0, NULL)
+          && parsed("                 from TUP.CPP:2:", M_TEXT, NULL, 0, 0, NULL));
+    CHECK("g++ 12: an error in a library header with no extension",
+          parsed("/opt/djgpp/lib/gcc/i586-pc-msdosdjgpp/12.2.0/include/c++/tuple:1357:25: error: static assertion failed: tuple index must be in range",
+                 M_ERROR, "/opt/djgpp/lib/gcc/i586-pc-msdosdjgpp/12.2.0/include/c++/tuple", 1357, 25, "static assertion failed: tuple index must be in range"));
+    CHECK("g++ 12: required by substitution of, in a .h", parsed("/opt/djgpp/lib/gcc/i586-pc-msdosdjgpp/12.2.0/include/c++/bits/utility.h:84:11:   "
+          "required by substitution of 'template<long unsigned int __i, class _Tp> using __tuple_element_t = typename std::tuple_element::type'", M_NOTE,
+          "/opt/djgpp/lib/gcc/i586-pc-msdosdjgpp/12.2.0/include/c++/bits/utility.h", 84, 11,
+          "required by substitution of 'template<long unsigned int __i, class _Tp> using __tuple_element_t = typename std::tuple_element::type'"));
+    CHECK("g++ 12: a note", parsed("TUP.CPP:8:33: note: declared here", M_NOTE, "TUP.CPP", 8, 33, "declared here"));
+    CHECK("g++ 12: the linker", parsed("/tmp/ccAnPCIo.o:LNK.CPP:(.text+0x7): undefined reference to `foo()'", M_ERROR, NULL, 0, 0, NULL)
+          && parsed("collect2: error: ld returned 1 exit status", M_ERROR, NULL, 0, 0, NULL));
+    /* g++ 9.3 (DJGPP's own, in DOS) writes the same shapes; its headers are in DJDIR/include/cxx/9 */
+    CHECK("g++ 9: required from, in DJGPP's headers", parsed("c:/djgpp/include/cxx/9/bits/stl_algo.h:1975:22:   required from 'void std::__sort(...)'",
+          M_NOTE, "c:/djgpp/include/cxx/9/bits/stl_algo.h", 1975, 22, "required from 'void std::__sort(...)'"));
+    CHECK("g++ 9: an error in <vector>, which is a file called vector", parsed("c:/djgpp/include/cxx/9/vector:12:3: error: x", M_ERROR,
+          "c:/djgpp/include/cxx/9/vector", 12, 3, "x"));
+    CHECK("g++ 9: an error in its template code (.tcc)", parsed("c:/djgpp/include/cxx/9/bits/vector.tcc:1:1: error: y", M_ERROR,
+          "c:/djgpp/include/cxx/9/bits/vector.tcc", 1, 1, "y"));
+
+    mkdir(path("GPPP"), 0777);
+    write_file("GPPP/project.ini", "[project]\nbuild_on = dos\nbuild = cat GPP.OUT\n", -1);
+    write_file("GPPP/GPP.OUT", "HELLO.CPP: In function 'int main()':\n"
+               "HELLO.CPP:3:5: error: 'y' was not declared in this scope\n    3 |     y = 1;\n      |     ^\n    4 |     error: ;\n"
+               "HELLO.CPP: In instantiation of 'T f(T) [with T = int]':\nHELLO.CPP:5:6:   required from here\n", -1);
+    write_file("GPPP/HELLO.CPP", "int main()\n{\n    y = 1;\n    error: ;\n    return f(1);\n}\n", -1);
+    fresh();
+    ed_open(path("GPPP/HELLO.CPP"), 0);
+    keys(1, DK_F9);
+    run();
+    CHECK("a g++ build: its error counted, not the lines it shows", t_snapped && snap_has("Build: 1 error") && msgs_count(M_ERROR) == 1
+          && msgs_count(M_NOTE) == 1);
+    keys(2, DK_ESC, DK_F8);
+    keys(1, DK_F8);
+    run();
+    CHECK("...F8 goes to the error, then to where the template was used", files[cur]->cy == 4 && files[cur]->cx == 5);
+    mkdir(path("LOOSE"), 0777);
+    write_file("LOOSE/HELLO.CPP", "int main() { return 0; }\n", -1);
+    fresh();
+    ed_open(path("LOOSE/HELLO.CPP"), 0);
+    keys(1, DK_F9);
+    run();
+    CHECK("a .CPP on its own: F9 offers gpp", t_snapped && snap_has("gpp -Wall -g -o HELLO.EXE -x c++ HELLO.CPP"));
+}
+
+/* Random editing, then undo all of it and redo all of it. A C file, then
+ * a C++ one whose raw strings and comments cross lines, then a Pascal one
+ * with both of its comments: each language's states, kept and worked out
+ * again after every key, are checked against the text (buf_state_check). */
+static int random_rounds(const char *name, const char *start, const int *more, int nmore, int rounds)
 {
     static const int pool[] = {
         'a', 'b', ' ', '{', '}', '(', ')', ';', 'x', DK_ENTER, DK_TAB, KM_SHIFT | DK_TAB, DK_BACKSPACE, DK_DEL,
@@ -1012,38 +1353,38 @@ static void test_random(void)
         'p', 'r', 'i', 'n', 't', 'f', 'z', 's', KM_CTRL | ' ', KM_CTRL | DK_F1, DK_F1, KM_SHIFT | DK_F1, DK_ESC, DK_ESC,
         '/', '*', '/', '*', '"', '\'', DK_ENTER,
     };
+    int npool = (int)(sizeof pool / sizeof pool[0]);
     int round, i, bad = 0, stop;
-    puts("Random editing (undo all of it, redo all of it)");
-    srand(1234);
-    for (round = 0; round < 40 && !bad; round++) {
+    for (round = 0; round < rounds && !bad; round++) {
         char *before, *after, *now;
         fresh();
-        ed_open(path("RAND.C"), 0);
-        type("int f(void)\n{\n    return (1 + 2);\n}\n");
+        ed_open(path(name), 0);
+        type(start);
         run();
         before = text_of(files[cur]);
         for (i = 0; i < 600; i++) {
-            ed_key(pool[rand() % (int)(sizeof pool / sizeof pool[0])]);
+            int k = rand() % (npool + nmore);
+            ed_key(k < npool ? pool[k] : more[k - npool]);
             if (i % 50 == 0)
                 ed_draw();
             if (!buf_check(files[cur])) {
                 bad = 1;
-                printf("  FAIL  the buffer broke in round %d, step %d\n", round, i);
+                printf("  FAIL  %s: the buffer broke in round %d, step %d\n", name, round, i);
                 break;
             }
             if (!words_check(files[cur])) {
                 bad = 1;
-                printf("  FAIL  the word index differs from the text in round %d, step %d\n", round, i);
+                printf("  FAIL  %s: the word index differs from the text in round %d, step %d\n", name, round, i);
                 break;
             }
             if (i % 3 == 0 && !ed_paint_check()) {
                 bad = 1;
-                printf("  FAIL  the screen drawn with its row cache differs, round %d, step %d\n", round, i);
+                printf("  FAIL  %s: the screen drawn with its row cache differs, round %d, step %d\n", name, round, i);
                 break;
             }
             if (!buf_state_check(files[cur])) {
                 bad = 1;
-                printf("  FAIL  a kept syntax state is wrong, round %d, step %d\n", round, i);
+                printf("  FAIL  %s: a kept syntax state is wrong, round %d, step %d\n", name, round, i);
                 break;
             }
         }
@@ -1059,7 +1400,7 @@ static void test_random(void)
         if (strcmp(now, "")) {
             /* everything since the file opened, typing included, is undone */
             bad = 1;
-            printf("  FAIL  undoing everything in round %d left: [%s]\n", round, now);
+            printf("  FAIL  %s: undoing everything in round %d left: [%s]\n", name, round, now);
         }
         free(now);
         while (files[cur]->upos < stop && buf_redo(files[cur]))
@@ -1067,17 +1408,34 @@ static void test_random(void)
         now = text_of(files[cur]);
         if (strcmp(now, after)) {
             bad = 1;
-            printf("  FAIL  redoing everything in round %d gave a different text\n", round);
+            printf("  FAIL  %s: redoing everything in round %d gave a different text\n", name, round);
         }
         if (!files[cur]->words || !words_check(files[cur])) {
             bad = 1;
-            printf("  FAIL  after undo and redo, the word index differs from the text (round %d)\n", round);
+            printf("  FAIL  %s: after undo and redo, the word index differs from the text (round %d)\n", name, round);
         }
         free(now);
         free(before);
         free(after);
     }
-    CHECK("40 rounds of 600 random keys: the buffer, its word index, syntax states and screen stay sound; undo and redo are exact", !bad);
+    return !bad;
+}
+
+static void test_random(void)
+{
+    /* R"x( ... )x" and the like: keys that open and close raw strings */
+    static const int cpp_keys[] = { 'R', '"', '(', ')', 'x', 'R', '"', '(', ')', '"', ')', 'x', '"', '\'', '1' };
+    static const int pas_keys[] = { '{', '}', '(', '*', ')', '*', ')', '{', '}', '$' };
+    puts("Random editing (undo all of it, redo all of it)");
+    srand(1234);
+    CHECK("40 rounds of 600 random keys: the buffer, its word index, syntax states and screen stay sound; undo and redo are exact",
+          random_rounds("RAND.C", "int f(void)\n{\n    return (1 + 2);\n}\n", NULL, 0, 40));
+    CHECK("...in C++, with raw strings over lines, 20 rounds",
+          random_rounds("RAND.CPP", "auto s = R\"x(one\ntwo )\" three\n)x\";\nint f() { return 1'0; } /* a\nb */\nauto t = R\"(\n)\";\n",
+                        cpp_keys, (int)(sizeof cpp_keys / sizeof cpp_keys[0]), 20));
+    CHECK("...in Pascal, with { } and (* *) comments over lines, 20 rounds",
+          random_rounds("RAND.PAS", "program P; { a\nb } (* c\nd *)\nbegin WriteLn('x') end.\n",
+                        pas_keys, (int)(sizeof pas_keys / sizeof pas_keys[0]), 20));
 }
 
 /* Open a file, play a script, and write the screen (or the menu or dialog
@@ -1507,6 +1865,10 @@ int main(int argc, char **argv)
     test_find_files();
     test_symbols();
     test_libraries();
+    test_cpp_language();
+    test_cpp_symbols();
+    test_cpp_suggestions();
+    test_cpp_build();
     test_disk_changes();
     test_make_tabs();
     test_big_and_memory();

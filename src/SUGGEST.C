@@ -318,38 +318,61 @@ static void from_file(Buffer *f, const char *p, int plen, const char *self, int 
     }
 }
 
+/* Is the word that starts at s written after std:: (or std::chrono:: and
+ * so on)? Then the names offered are the reference's C++ ones alone. */
+static int after_std(const Buffer *b, int s)
+{
+    const char *t = b->ln[b->cy].s;
+    int i = s, e;
+    if (b->lang != L_CPP)
+        return 0;
+    while (i >= 2 && t[i - 1] == ':' && t[i - 2] == ':') {
+        e = i -= 2;
+        while (i > 0 && is_word_char(b->lang, (unsigned char)t[i - 1]))
+            i--;
+        if (e - i == 3 && !memcmp(t + i, "std", 3) && (i == 0 || t[i - 1] != ':'))
+            return 1;
+    }
+    return 0;
+}
+
 int sug_collect(Buffer *b, const char *p, int plen, Cand *v, int max)
 {
     const char *lists[4], *self;
-    int i, k, nl, s, e, rl = ref_lang(b->lang);
+    int i, k, nl, s, e, pass, rl = ref_lang(b->lang), in_std;
     char pre[WORD_MAX];
     const Line *L = &b->ln[b->cy];
-    if (plen < 1 || plen >= (int)sizeof pre)
+    /* the word at the cursor: the one being typed */
+    word_prefix(b, &s);
+    in_std = after_std(b, s);
+    if ((plen < 1 && !in_std) || plen >= (int)sizeof pre)
         return 0;
     memcpy(pre, p, plen);
     pre[plen] = 0;
     npool = 0;
     memset(pslot, 0, sizeof pslot);
-    /* the word at the cursor: the one being typed */
-    word_prefix(b, &s);
     for (e = s; e < L->len && is_word_char(b->lang, (unsigned char)L->s[e]); e++)
         ;
     self = e > s && (isalpha((unsigned char)L->s[s]) || L->s[s] == '_') ? L->s + s : NULL;
-    from_file(b, pre, plen, self, e - s, 4);
-    for (k = 0; k < nfiles; k++)
-        if (files[k] != b && files[k]->lang == b->lang)
-            from_file(files[k], pre, plen, NULL, 0, 2);
-    if (rl >= 0)
+    if (!in_std) {
+        from_file(b, pre, plen, self, e - s, 4);
+        for (k = 0; k < nfiles; k++)
+            if (files[k] != b && lang_family(files[k]->lang) == lang_family(b->lang))
+                from_file(files[k], pre, plen, NULL, 0, 2);
+    }
+    /* the reference: in C++ its own entries first, then C's (add keeps the
+     * first entry it is given for a word) */
+    for (pass = 0; rl >= 0 && pass < (rl == L_CPP && !in_std ? 2 : 1); pass++)
         for (i = 0; i < nrefs; i++) {
             const Ref *r = &refs[i];
             int rn = (int)strlen(r->name), ok = 1;
             for (k = 0; k < rn; k++)
                 if (!is_word_char(b->lang, (unsigned char)r->name[k]))
-                    ok = 0;
-            if (ok && r->lang == rl && starts_like(r->name, rn, pre, plen))
+                    ok = 0;              /* string::size: not a word to type */
+            if (ok && r->lang == (pass ? L_C : rl) && starts_like(r->name, rn, pre, plen))
                 add(r->name, rn, 3, r);
         }
-    nl = lang_lists(b->lang, lists);
+    nl = in_std ? 0 : lang_lists(b->lang, lists);
     for (k = 0; k < nl; k++) {
         const char *t = lists[k];
         while (*t) {
@@ -516,7 +539,7 @@ void sug_popup(Buffer *b)
         const Line *L = &b->ln[b->cy];
         int s, plen = word_prefix(b, &s), n, i, w = 24, h, r, c, row, col, k, lh;
         char t[120];
-        if (plen == 0) {
+        if (plen == 0 && !after_std(b, s)) {
             ed_message(1, "Type the start of a word, then Ctrl-Space lists the ways to finish it.");
             return;
         }

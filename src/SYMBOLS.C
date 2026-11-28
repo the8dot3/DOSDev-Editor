@@ -3,6 +3,8 @@
  * line, by the shape of each language's definitions, not by compiling:
  *   C         a name and ( at the start of a line, not ending in ;
  *             #define NAME, struct/union/enum NAME, typedef ... NAME;
+ *   C++       as C, and class/struct/union/enum/namespace NAME, using NAME =,
+ *             and functions in namespaces and class bodies (cpp_scan)
  *   Assembly  NAME: at the start of a line, NAME proc/macro/equ/db...,
  *             %define and %macro NAME
  *   Pascal    procedure, function, constructor, destructor NAME,
@@ -138,6 +140,329 @@ static int c_line(const char *s, int n, const unsigned char *role, int l, Sym *o
     return add(out, k, max, s, j, e, l, 'f');
 }
 
+/* ---- C++ ------------------------------------------------------------------------
+ * C++ puts definitions inside namespaces and class bodies, indented, so a
+ * line's place in the braces matters more than where it starts. cpp_scan
+ * counts the braces (outside comments, strings and # lines) and looks only
+ * at lines where a declaration can be: at the top, or directly inside a
+ * namespace, a class or an extern "C" block, never inside a function body.
+ * There it takes:
+ *   class, struct, union NAME and enum (class) NAME, when { or : or the end
+ *   of the line follows (not a declaration ending in ;); namespace NAME;
+ *   using NAME = ...; and the C rules for #define and typedef;
+ *   a function: a name and its ( whose ) is followed by { (or by : and the
+ *   member initialisers, or const, override ... and then {) before any ; or
+ *   =, on this line or the next few. Its name has the classes it is in in
+ *   front: bar in the body of class Foo, and void Foo::bar() outside it,
+ *   are both Foo::bar. Constructors (Foo::Foo), destructors (Foo::~Foo) and
+ *   operators (Foo::operator+) are functions too. A template's parameter
+ *   list is left out (template <class T> T max(T, T) is max; Stack<T>::push
+ *   is Stack::push), and namespaces are not written in names.
+ * It is a guess from the shape of lines, as the C rules are. */
+
+#define SCOPES 16
+typedef struct {
+    int depth, nsc;             /* braces open; the scopes open */
+    struct { char name[40]; int depth, cls; } sc[SCOPES];
+    char pending[40]; int pend, pcls;   /* a class or namespace whose { is still to come */
+    int in_define;              /* the line before was a # line ending in \ */
+} CppScope;
+
+static int word_at(const char *s, int n, int i, const char *w)
+{
+    return word_eq(s, n, i, word_end(s, n, i), w, 0);
+}
+
+/* Past a balanced <...> that starts at s[i] ('<'), or -1 if not closed. */
+static int angle_end(const char *s, int n, int i)
+{
+    int d = 0;
+    for (; i < n; i++)
+        if (s[i] == '<')
+            d++;
+        else if (s[i] == '>' && --d == 0)
+            return i + 1;
+        else if (s[i] == ';' || s[i] == '{')
+            return -1;
+    return -1;
+}
+
+/* name, with the class scopes it is in in front: Foo::bar */
+static int add_scoped(const CppScope *c, Sym *out, int k, int max, const char *name, int line, char kind)
+{
+    char t[80];
+    int i, n = 0;
+    t[0] = 0;
+    if (!strstr(name, "::"))
+        for (i = 0; i < c->nsc; i++)
+            if (c->sc[i].cls && c->sc[i].name[0])
+                n += snprintf(t + n, sizeof t - n, "%s::", c->sc[i].name);
+    if (n < (int)sizeof t)
+        snprintf(t + n, sizeof t - n, "%s", name);
+    return add(out, k, max, t, 0, (int)strlen(t), line, kind);
+}
+
+/* After the ( at line l, column i: is this a definition? The ) that closes
+ * it, then the first {, ; or = outside brackets, looked for over the next
+ * few lines: { means a body. Comments and strings are passed over. */
+static int has_body(const Line *ln, int n, int l, int i)
+{
+    int depth = 0, comment = 0, last = l + 8 < n ? l + 8 : n - 1, closed = 0;
+    for (; l <= last; l++, i = 0) {
+        const char *s = ln[l].s;
+        int len = ln[l].len;
+        for (; i < len; i++) {
+            char ch = s[i];
+            if (comment) {
+                if (ch == '*' && i + 1 < len && s[i + 1] == '/')
+                    comment = 0, i++;
+                continue;
+            }
+            if (ch == '/' && i + 1 < len && s[i + 1] == '/')
+                break;
+            if (ch == '/' && i + 1 < len && s[i + 1] == '*') {
+                comment = 1;
+                i++;
+            } else if (ch == '"' || ch == '\'') {
+                for (i++; i < len && s[i] != ch; i++)
+                    if (s[i] == '\\')
+                        i++;
+            } else if (ch == '(' || ch == '[')
+                depth++;
+            else if (ch == ')' || ch == ']') {
+                if (--depth == 0)
+                    closed = 1;
+            } else if (closed && depth == 0 && (ch == '{' || ch == ';' || ch == '='))
+                return ch == '{';
+            else if (!closed && depth == 0 && (ch == ';' || ch == '{'))
+                return 0;
+        }
+    }
+    return 0;
+}
+
+static int is_not_a_name(const char *s, int n)
+{
+    static const char *const w[] = { "if", "while", "for", "switch", "return", "sizeof", "catch", "decltype",
+        "alignof", "alignas", "noexcept", "static_assert", "typeid", "throw", "new", "delete", "case", "do",
+        "else", "requires", "co_return", "co_await", "co_yield", "defined", "__attribute__" };
+    int i;
+    for (i = 0; i < (int)(sizeof w / sizeof w[0]); i++)
+        if ((int)strlen(w[i]) == n && !memcmp(w[i], s, n))
+            return 1;
+    return 0;
+}
+
+/* The function on a declaration line from s[i], if it is one. */
+static int cpp_function(const CppScope *c, const Line *ln, int nl, int l, int i, const unsigned char *role,
+                        Sym *out, int k, int max)
+{
+    const char *s = ln[l].s;
+    int n = ln[l].len, p, angle = 0, op = -1, end = -1, paren = -1, j, m;
+    char name[80];
+    for (p = i; p < n; p++) {
+        char ch = s[p];
+        if (role[p] == A_COMMENT || role[p] == A_STRING)
+            return k;
+        if (is_id(ch) && (p == i || !is_id(s[p - 1])) && word_at(s, n, p, "operator")) {
+            int q = skip_sp(s, n, p + 8);
+            op = p;
+            if (q + 1 < n && s[q] == '(' && s[q + 1] == ')')
+                end = q + 2;                 /* operator() */
+            else if (q < n && is_id(s[q])) {
+                end = q;                     /* operator bool, operator new[] */
+                while (end < n && s[end] != '(')
+                    end++;
+                while (end > q && s[end - 1] == ' ')
+                    end--;
+            } else
+                for (end = q; end < n && s[end] != '(' && s[end] != ' '; end++)
+                    ;
+            paren = end;
+            while (paren < n && s[paren] != '(')
+                paren++;
+            break;
+        }
+        if (ch == '<' && p > i && is_id(s[p - 1]))
+            angle++;
+        else if (ch == '>' && angle > 0)
+            angle--;
+        else if (angle == 0 && ch == '(') {
+            paren = end = p;
+            break;
+        } else if (angle == 0 && (ch == '=' || ch == ';' || ch == '{' || ch == '}'))
+            return k;
+    }
+    if (paren < 0 || paren >= n || !has_body(ln, nl, l, paren))
+        return k;
+    /* back from the name's end, over Foo<T>::~Foo */
+    j = op >= 0 ? op : end;
+    if (op < 0) {
+        while (j > i && s[j - 1] == ' ')
+            j--;
+        end = j;
+        if (j > i && s[j - 1] == '>')          /* f<int>(...): a specialisation */
+            for (m = 0; j > i; j--) {
+                if (s[j - 1] == '>') m++;
+                else if (s[j - 1] == '<' && --m == 0) { j--; break; }
+            }
+        while (j > i && is_id(s[j - 1]))
+            j--;
+        if (j > i && s[j - 1] == '~')
+            j--;
+    }
+    while (j - 2 >= i && s[j - 1] == ':' && s[j - 2] == ':') {
+        j -= 2;
+        if (j > i && s[j - 1] == '>')
+            for (m = 0; j > i; j--) {
+                if (s[j - 1] == '>') m++;
+                else if (s[j - 1] == '<' && --m == 0) { j--; break; }
+            }
+        while (j > i && is_id(s[j - 1]))
+            j--;
+    }
+    /* the name, without template arguments or spaces */
+    for (m = 0, p = j; p < end && m < (int)sizeof name - 1; p++) {
+        if (s[p] == '<' && (op < 0 || p < op)) {      /* operator< is a name */
+            int e = angle_end(s, end, p);
+            if (e < 0)
+                break;
+            p = e - 1;
+            continue;
+        }
+        if (s[p] != ' ' && s[p] != '\t')
+            name[m++] = s[p];
+        else if (m && is_id(name[m - 1]) && p + 1 < end && is_id(s[p + 1]))
+            name[m++] = ' ';                           /* operator bool */
+    }
+    name[m] = 0;
+    if (!m || isdigit((unsigned char)name[0]) || name[0] == ':' || is_not_a_name(name, m))
+        return k;
+    return add_scoped(c, out, k, max, name, l, 'f');
+}
+
+/* One line where a declaration can be. */
+static int cpp_decl(CppScope *c, const Line *ln, int nl, int l, const unsigned char *role, Sym *out, int k, int max)
+{
+    const char *s = ln[l].s;
+    int n = ln[l].len, i = skip_sp(s, n, 0), e, j, a;
+    char t[40];
+    if (i >= n || role[i] == A_COMMENT || role[i] == A_STRING)
+        return k;
+    if (s[i] == '#' || s[i] == '}')
+        return c_line(s + i, n - i, role + i, l, out, k, max);   /* #define, } Name; */
+    if (word_at(s, n, i, "template")) {
+        i = skip_sp(s, n, word_end(s, n, i));
+        if (i < n && s[i] == '<' && (i = angle_end(s, n, i)) < 0)
+            return k;                        /* the parameters go on: the next line says what */
+        i = skip_sp(s, n, i);
+        if (i >= n || role[i] == A_COMMENT)
+            return k;
+    }
+    for (;;) {                               /* words that come before what it is */
+        e = word_end(s, n, i);
+        if (word_at(s, n, i, "extern") && skip_sp(s, n, e) < n && s[skip_sp(s, n, e)] == '"') {
+            for (j = skip_sp(s, n, e) + 1; j < n && s[j] != '"'; j++)
+                ;
+            j = skip_sp(s, n, j + 1);
+            if (j >= n || s[j] == '{' || role[j] == A_COMMENT) {
+                c->pend = 1;                 /* extern "C" {: what's inside is at the top */
+                c->pending[0] = 0;
+                c->pcls = 0;
+                return k;
+            }
+            i = j;
+        } else if (word_at(s, n, i, "export") || word_at(s, n, i, "inline") || word_at(s, n, i, "static")
+                   || word_at(s, n, i, "extern") || word_at(s, n, i, "constexpr") || word_at(s, n, i, "consteval")
+                   || word_at(s, n, i, "virtual") || word_at(s, n, i, "explicit") || word_at(s, n, i, "friend"))
+            i = skip_sp(s, n, e);
+        else
+            break;
+    }
+    if (i >= n)
+        return k;
+    e = word_end(s, n, i);
+    if (word_at(s, n, i, "public") || word_at(s, n, i, "private") || word_at(s, n, i, "protected"))
+        return k;
+    if (word_at(s, n, i, "typedef"))
+        return c_line(s + i, n - i, role + i, l, out, k, max);
+    if (word_at(s, n, i, "using")) {
+        int q = skip_sp(s, n, e), qe = word_end(s, n, q);
+        if (qe > q && !word_at(s, n, q, "namespace") && skip_sp(s, n, qe) < n && s[skip_sp(s, n, qe)] == '=') {
+            snprintf(t, sizeof t, "%.*s", qe - q, s + q);
+            return add_scoped(c, out, k, max, t, l, 't');
+        }
+        return k;
+    }
+    if (word_at(s, n, i, "namespace")) {
+        j = skip_sp(s, n, e);
+        for (a = j; a < n && (is_id(s[a]) || s[a] == ':'); a++)
+            ;                                /* namespace a::b (C++17) */
+        if (skip_sp(s, n, a) < n && s[skip_sp(s, n, a)] == '=')
+            return k;                        /* an alias */
+        snprintf(c->pending, sizeof c->pending, "%.*s", a - j, s + j);
+        c->pend = 1;
+        c->pcls = 0;
+        return a > j ? add(out, k, max, s, j, a, l, 'n') : k;
+    }
+    {
+        int cls = word_at(s, n, i, "class") || word_at(s, n, i, "struct") || word_at(s, n, i, "union");
+        if (cls || word_at(s, n, i, "enum")) {
+            j = skip_sp(s, n, e);
+            if (!cls && (word_at(s, n, j, "class") || word_at(s, n, j, "struct")))
+                j = skip_sp(s, n, word_end(s, n, j));
+            e = word_end(s, n, j);
+            a = skip_sp(s, n, e);
+            if (word_at(s, n, a, "final"))
+                a = skip_sp(s, n, word_end(s, n, a));
+            if (a >= n || s[a] == '{' || role[a] == A_COMMENT || (s[a] == ':' && (a + 1 >= n || s[a + 1] != ':'))) {
+                if (last_code(s, n, role) == ';' && !memchr(s + a, '{', n - a))
+                    return k;                /* class Foo; or enum E : int; */
+                if (cls) {
+                    snprintf(c->pending, sizeof c->pending, "%.*s", e - j, s + j);
+                    c->pend = 1;
+                    c->pcls = 1;
+                }
+                if (e > j) {
+                    snprintf(t, sizeof t, "%.*s", e - j, s + j);
+                    k = add_scoped(c, out, k, max, t, l, 't');
+                }
+                return k;
+            }
+            /* struct Point make(...): a function that returns one */
+        }
+    }
+    return cpp_function(c, ln, nl, l, i, role, out, k, max);
+}
+
+/* The braces on a line, and the scopes they open and close. */
+static void cpp_braces(CppScope *c, const char *s, int n, const unsigned char *role)
+{
+    int i = skip_sp(s, n, 0), define = c->in_define;
+    c->in_define = (define || (i < n && s[i] == '#')) && n > 0 && s[n - 1] == '\\';
+    if (define || (i < n && s[i] == '#'))
+        return;                              /* a # line's braces are a macro's */
+    for (; i < n; i++) {
+        if (role[i] != A_SYMBOL)
+            continue;
+        if (s[i] == '{') {
+            c->depth++;
+            if (c->pend && c->nsc < SCOPES) {
+                snprintf(c->sc[c->nsc].name, sizeof c->sc[0].name, "%s", c->pending);
+                c->sc[c->nsc].depth = c->depth;
+                c->sc[c->nsc++].cls = c->pcls;
+            }
+            c->pend = 0;
+        } else if (s[i] == '}') {
+            if (c->nsc && c->sc[c->nsc - 1].depth == c->depth)
+                c->nsc--;
+            if (c->depth > 0)
+                c->depth--;
+        } else if (s[i] == ';')
+            c->pend = 0;
+    }
+}
+
 static int asm_line(const char *s, int n, const unsigned char *role, int l, Sym *out, int k, int max)
 {
     int i, e, j;
@@ -250,6 +575,8 @@ int sym_scan(int lang, const Line *ln, int n, Sym *out, int max)
     static unsigned char *role;
     static int cap;
     int l, k = 0, state = 0;
+    CppScope cs;
+    memset(&cs, 0, sizeof cs);
     for (l = 0; l < n && k < max; l++) {
         const char *s = ln[l].s;
         int len = ln[l].len, i, e;
@@ -260,6 +587,13 @@ int sym_scan(int lang, const Line *ln, int n, Sym *out, int max)
         state = syn_line(lang, s, len, state, role);
         switch (lang) {
         case L_C: k = c_line(s, len, role, l, out, k, max); break;
+        case L_CPP:
+            i = cs.nsc ? cs.sc[cs.nsc - 1].depth : 0;     /* where declarations are */
+            e = skip_sp(s, len, 0);
+            if (!cs.in_define && (cs.depth == i || (cs.depth == i + 1 && e < len && s[e] == '}')))
+                k = cpp_decl(&cs, ln, n, l, role, out, k, max);   /* (} Name; closes a typedef) */
+            cpp_braces(&cs, s, len, role);
+            break;
         case L_ASM: k = asm_line(s, len, role, l, out, k, max); break;
         case L_PASCAL: k = pascal_line(s, len, role, l, out, k, max); break;
         case L_BASIC: k = basic_line(s, len, role, l, out, k, max); break;
@@ -307,6 +641,7 @@ static const char *kind_name(char kind)
     case 't': return "type";
     case 'l': return "label";
     case 'v': return "data";
+    case 'n': return "namespace";
     default: return "section";
     }
 }
@@ -344,9 +679,20 @@ static const char *sym_info(int i)
     return t;
 }
 
+/* The last part of a C++ name: bar in Foo::bar. */
+static const char *last_part(const char *name)
+{
+    const char *p = name, *q;
+    while ((q = strstr(p, "::")) != NULL)
+        p = q + 2;
+    return p;
+}
+
 static int col_of_name(const Buffer *b, int line, const char *name)
 {
     const char *p = line < b->n ? strstr(b->ln[line].s, name) : NULL;
+    if (!p && line < b->n)
+        p = strstr(b->ln[line].s, last_part(name));    /* Foo::bar, defined in Foo's body */
     return p ? (int)(p - b->ln[line].s) + 1 : 0;
 }
 
@@ -397,7 +743,7 @@ static void defs_from(Buffer *f, const char *path, const char *name, int nocase)
     static Sym s[MAXSYMS];
     int n = sym_scan(f->lang, f->ln, f->n, s, MAXSYMS), i, k;
     for (i = 0; i < n && ndefs < MAXDEFS; i++)
-        if (same_name(s[i].name, name, nocase)) {
+        if (same_name(s[i].name, name, nocase) || same_name(last_part(s[i].name), name, nocase)) {
             const Line *L = &f->ln[s[i].line];
             for (k = 0; k < ndefs; k++)
                 if (defs[k].line == s[i].line && ed_same_path(defs[k].path, path))
@@ -451,7 +797,7 @@ static void defs_walk(const char *dir, int lang, const char *name, int nocase, i
                 defs_walk(p, lang, name, nocase, depth + 1);
             continue;
         }
-        if (lang_of(e->d_name) != lang || st.st_size > 1024L * 1024)
+        if (lang_family(lang_of(e->d_name)) != lang_family(lang) || st.st_size > 1024L * 1024)
             continue;
         plat_fullpath(p, full);
         if (is_open(full))
@@ -528,6 +874,16 @@ static int find_include(const Buffer *b, const char *name, char *out)
     }
     if ((env = getenv("DJDIR")) != NULL && n < 16)
         snprintf(dirs[n++], DE_PATH, "%s/include", env);
+    /* C++'s own headers: DJGPP keeps them in include/cxx/<GCC's version> */
+    if (env && b->lang == L_CPP) {
+        snprintf(t, sizeof t, "%.200s/include/cxx", env);
+        if ((d = opendir(t)) != NULL) {
+            while ((e = readdir(d)) != NULL && n < 16)
+                if (e->d_name[0] != '.')
+                    snprintf(dirs[n++], DE_PATH, "%.200s/%.20s", t, e->d_name);
+            closedir(d);
+        }
+    }
     for (i = 0; i < n; i++) {
         FILE *f;
         snprintf(out, DE_PATH, "%.200s/%.58s", dirs[i], name);
@@ -546,7 +902,7 @@ static int include_name(const Buffer *b, char *name, int size)
     const char *s = L->s, *q, *e;
     while (*s == ' ' || *s == '\t')
         s++;
-    if (b->lang == L_C && *s == '#') {
+    if (lang_family(b->lang) == L_C && *s == '#') {
         s++;
         while (*s == ' ')
             s++;
@@ -595,7 +951,7 @@ void sym_definition(void)
     plat_fullpath(b->path[0] ? b->path : "UNTITLED", full);
     defs_from(b, full, w, nocase);
     for (i = 0; i < nfiles; i++)
-        if (files[i] != b && files[i]->lang == b->lang && files[i]->path[0]) {
+        if (files[i] != b && lang_family(files[i]->lang) == lang_family(b->lang) && files[i]->path[0]) {
             plat_fullpath(files[i]->path, path);
             defs_from(files[i], path, w, nocase);
         }

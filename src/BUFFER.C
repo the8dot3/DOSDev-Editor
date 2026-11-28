@@ -557,6 +557,7 @@ int buf_load(Buffer *b, const char *path)
         return -1;
     }
     fclose(f);
+    b->lang = lang_of_text(path, data, size);
     b->ctrlz = size > 0 && data[size - 1] == 0x1A;
     if (b->ctrlz)
         size--;
@@ -649,6 +650,22 @@ static int write_lines(const Buffer *b, const char *name)
     return ok;
 }
 
+/* The language of the text by this name: lang_of_text on the first 4 KB
+ * of the lines, as buf_load reads them from the file. */
+static int lang_now(const Buffer *b, const char *path)
+{
+    static char t[4096];
+    int i, n = 0;
+    for (i = 0; i < b->n && n < (int)sizeof t; i++) {
+        int k = b->ln[i].len < (int)sizeof t - n ? b->ln[i].len : (int)sizeof t - n;
+        memcpy(t + n, b->ln[i].s, k);
+        n += k;
+        if (n < (int)sizeof t)
+            t[n++] = '\n';
+    }
+    return lang_of_text(path, t, n);
+}
+
 int buf_save(Buffer *b, const char *path)
 {
     char tmp[DE_PATH];
@@ -667,10 +684,13 @@ int buf_save(Buffer *b, const char *path)
         }
         return -2;                /* it's safe in the .$$$ file */
     }
-    if (path != b->path) {
-        strncpy(b->path, path, DE_PATH - 1);
-        b->path[DE_PATH - 1] = 0;
-        b->lang = lang_of(path);
+    /* A new name may be another language; so may a .H that now has C++ in it. */
+    if (path != b->path || lang_now(b, path) != b->lang) {
+        b->lang = lang_now(b, path);
+        if (path != b->path) {
+            strncpy(b->path, path, DE_PATH - 1);
+            b->path[DE_PATH - 1] = 0;
+        }
         b->hvalid = 1;
         b->hknown = b->hdirty = 0;
         if (b->words)

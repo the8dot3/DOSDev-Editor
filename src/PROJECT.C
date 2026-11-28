@@ -73,7 +73,10 @@ static int is_source(const char *name)
         return 0;
     if (eq_nocase(base, "MAKEFILE") || eq_nocase(base, "GNUMAKEFILE"))
         return 1;
-    return ext_is(name, " C H CPP CXX CC HPP HH ASM INC S NAS MAC PAS PP LPR DPR BAS BI MAK MK ");
+    /* (TCC: the C++ library's template code; <vector> is a file called
+     * vector, which lang_of knows by its folder) */
+    return ext_is(name, " C H CPP CXX CC HPP HH HXX TCC ASM INC S NAS MAC PAS PP LPR DPR BAS BI MAK MK ")
+        || (!strchr(base, '.') && lang_of(name) == L_CPP);
 }
 
 /* ---- the project --------------------------------------------------------------- */
@@ -186,6 +189,12 @@ static void guess(Buffer *b, char *build, char *run)
     switch (b->lang) {
     case L_C:
         snprintf(build, 160, "gcc -Wall -g -o %s.EXE -x c %s", name, base);
+        snprintf(run, 160, "%s.EXE", name);
+        break;
+    /* gpp is DJGPP's g++. -x c++, as GCC takes .CC and .CXX for C++ only
+     * when they are in lower case. */
+    case L_CPP:
+        snprintf(build, 160, "gpp -Wall -g -o %s.EXE -x c++ %s", name, base);
         snprintf(run, 160, "%s.EXE", name);
         break;
     case L_ASM:
@@ -498,6 +507,7 @@ static int file_at(const char *s, const char *end, char *file, int fsize)
 /* One line of a compiler's output: is it an error, a warning ..., and where?
  * Returns 1 with the file, line and column (0: none) when it says where.
  *   GCC, NASM:            MAIN.C:12:5: error: expected ';' before '}' token
+ *   G++, on templates:    MAIN.CPP:7:24:   required from here       (a note)
  *   Open Watcom:          MAIN.C(12): Error! E1009: Expecting ';' but found '}'
  *   Free Pascal:          MAIN.PAS(12,5) Error: Identifier not found "X"
  *   Turbo Pascal:         MAIN.PAS(12): Error 3: Unknown identifier.
@@ -513,6 +523,14 @@ int msg_parse(const char *line, int *kind, char *file, int fsize, int *lno, int 
     file[0] = 0;
     while (*s == ' ' || *s == '\t')
         s++;
+    /* GCC 9 and later show the line itself, as "  12 |     x = y;", and a
+     * line of ^ under it: text, whatever the line says (it may say error:) */
+    for (p = s; isdigit((unsigned char)*p); p++)
+        ;
+    while (*p == ' ')
+        p++;
+    if (*p == '|')
+        return 0;
     /* Turbo C: the kind first */
     if ((k = kind_at(s, &len)) >= 0 && s[len] == ' ') {
         p = s + len + 1;
@@ -576,6 +594,14 @@ int msg_parse(const char *line, int *kind, char *file, int fsize, int *lno, int 
                 *lno = n;
                 *col = c;
                 *text = q[len + 1] == ' ' ? q + len + 2 : q + len + 1;
+                return 1;
+            }
+            /* G++ on a template: where it was used, after the error it caused */
+            if (!strncmp(q, "required from", 13) || !strncmp(q, "required by", 11)) {
+                *kind = M_NOTE;
+                *lno = n;
+                *col = c;
+                *text = q;
                 return 1;
             }
         }
