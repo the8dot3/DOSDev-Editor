@@ -1,5 +1,6 @@
-/* DE - menus, dialogs, the file browser and the help screen. Each runs its
- * own little loop until it has an answer, drawing the editor beneath it. */
+/* DE - menus, dialogs and the file browser. Each runs its own little loop
+ * until it has an answer, drawing the editor beneath it. (The help viewer
+ * is in HELP.C.) */
 #include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>

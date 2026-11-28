@@ -257,7 +257,8 @@ void proj_commands(void)
     ed_message(0, "F9 builds with: %s", build[0] ? build : "(nothing)");
 }
 
-/* Is the output newer than every source in the project? */
+/* The time of the newest source (or .BAT or .INI) file in a folder and the
+ * folders under it, 3 deep; best if none is newer. */
 static long newest(const char *dir, int depth, long best)
 {
     DIR *d = opendir(dir);
@@ -284,6 +285,7 @@ static long newest(const char *dir, int depth, long best)
     return best;
 }
 
+/* Is the output newer than every source in the project? */
 static int up_to_date(const Project *p)
 {
     char out[DE_PATH];
