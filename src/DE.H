@@ -226,7 +226,6 @@ typedef struct {
 } Project;
 void proj_find(Buffer *b, Project *p);
 void proj_build(int then_run);         /* F9; Ctrl+F9 builds if needed, then runs (2: debugs) */
-void proj_run(void);
 void proj_debug(void);                 /* Project > Debug: builds if needed, then debugs */
 void proj_commands(void);              /* Project > Commands */
 int  msg_parse(const char *line, int *kind, char *file, int fsize, int *lno, int *col, const char **text);

@@ -360,19 +360,6 @@ void proj_debug(void)
     proj_build(2);
 }
 
-void proj_run(void)
-{
-    Project p;
-    proj_find(B_CUR, &p);
-    if (!p.run[0]) {
-        proj_commands();
-        proj_find(B_CUR, &p);
-        if (!p.run[0])
-            return;
-    }
-    run_it(&p);
-}
-
 void proj_build(int then_run)
 {
     Project p;
