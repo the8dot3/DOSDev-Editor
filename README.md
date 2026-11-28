@@ -1,9 +1,9 @@
 # DOSDev-Editor
 
 DE is a colour text editor and IDE for DOS programmers, in the style of the
-Borland IDEs. It builds and runs your programs, colours C, assembly, Pascal
-and BASIC, suggests words as you type, and knows the SDL3 and PDCurses
-functions. It is the editor of DOSDev, a DOS development environment for Linux,
+Borland IDEs. It builds and runs your programs, colours C, C++, assembly,
+Pascal and BASIC, suggests words as you type, and knows the C library, the
+everyday C++ library, and the SDL3 and PDCurses functions. It is the editor of DOSDev, a DOS development environment for Linux,
 and it also works on its own in any DOS system with a 386 or newer and a DPMI
 server (CWSDPMI).
 

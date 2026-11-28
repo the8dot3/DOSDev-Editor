@@ -17,7 +17,7 @@ DOSDev.
 
 `DE /CHECK FILE` is for a build to prove that the DE.EXE it made starts. It
 needs no keyboard. DE sets the screen up as at a normal start, puts it back,
-writes `DE 0.6 ok` and a line feed (not a carriage return) in FILE, and
+writes `DE 0.7 ok` and a line feed (not a carriage return) in FILE, and
 ends with exit code 0. If it cannot start, or cannot write FILE, it says why
 on the error output and ends with exit code 1. The number is DE's version.
 

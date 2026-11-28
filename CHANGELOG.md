@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.7
+
+- C++ is a language of its own. `.CPP`, `.CXX`, `.CC`, `.HPP`, `.HH` and
+  `.HXX` files are C++, in any case. A `.H` file is C unless its first
+  4 KB have a line that starts with `class`, `namespace`, `template` or
+  `#include <name>` with no dot in the name; it is looked at again when it
+  is saved. The status line says `C++`.
+- `.C` files no longer colour C++'s words (`class`, `new`, `template` and
+  the rest) as keywords.
+- C++ colours C++17's keywords, the C++20 ones in common use, the
+  alternative words (`and`, `not` ...), `nullptr`, the casts, and
+  `override` and `final`. `import` and `module` stay names. A raw string,
+  `R"x( ... )x"`, is coloured over as many lines as it takes. Digit
+  separators, exponents, prefixes such as `u8` and suffixes such as `"x"s`
+  and `10_km` are part of their number or string.
+- Ctrl-L and F12 find C++'s classes, structs, enums, namespaces, `using`
+  names, and functions in namespaces and class bodies. A method is listed
+  as `Foo::bar`, whether it is written in the class or outside it;
+  constructors, destructors and operators too. F12 on `bar` finds
+  `Foo::bar`, looks in C files from C++ and the other way round, and opens
+  DJGPP's `<vector>` and the like from `DJDIR\INCLUDE\CXX`.
+- The reference has 119 entries for the everyday C++ library, each with
+  its header. A C++ file sees C's entries too. After `std::`, suggestions
+  are the reference's C++ names alone. There is no `<thread>`.
+- F9 on a `.CPP` with no project offers `gpp -Wall -g -o NAME.EXE -x c++
+  NAME.CPP`.
+- g++'s `required from here` lines are notes, with their place, so F8
+  goes to where your code used a template. The source lines GCC 9 and
+  later show under a message are text, even when they say `error:`. An
+  error in a C++ library header (`vector`, `bits/vector.tcc`) has its
+  place.
+- Keep mine, after a run that changed a file's size, is not asked again
+  for the same change. DE took the file's new time but not its new size.
+- The syntax state of a file's first line was not always set; a stray
+  value could colour the first line as a comment.
+- The random-edit test also edits a C++ file and a Pascal file.
+
 ## 0.6
 
 - DE no longer saves over a file another program changed. Saving asks when

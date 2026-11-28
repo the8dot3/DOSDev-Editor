@@ -1,9 +1,9 @@
 Begin3
 Title:          DE
-Version:        0.6
-Entered-date:   2026-11-27
+Version:        0.7
+Entered-date:   2026-11-28
 Description:    The DOSDev Editor: a colour editor and IDE for DOS programmers
-Keywords:       editor, IDE, programming, syntax colours, SDL3, PDCurses, DOSDev
+Keywords:       editor, IDE, programming, syntax colours, C, C++, SDL3, PDCurses, DOSDev
 Author:         DOSDev
 Maintained-by:  DOSDev
 Platforms:      DOS, 386 or newer (DJGPP, with CWSDPMI)

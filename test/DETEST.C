@@ -924,7 +924,7 @@ static void test_libraries(void)
     keys(1, DK_F1);
     run();
     CHECK("the manual's contents fit one screen", t_snapped && snap_has("Getting started") && snap_has("How DE works"));
-    CHECK("...and it says it's 0.6", t_snapped && snap_has("Version 0.6"));
+    CHECK("...and it says it's 0.7", t_snapped && snap_has("Version 0.7"));
 }
 
 /* Keys that come faster than the screen can be drawn, the word index, the
@@ -1498,7 +1498,7 @@ static void test_theme(void)
     char line[200];
     int saved = 0;
     puts("Colours that follow DOSDev");
-    CHECK("DE 0.6", !strcmp(DE_VERSION, "0.6"));
+    CHECK("DE 0.7", !strcmp(DE_VERSION, "0.7"));
     CHECK("five themes", NTHEMES == 5 && !strcmp(theme_name[0], "Follow DOSDev") && !strcmp(theme_name[1], "Borland blue")
           && !strcmp(theme_name[2], "Midnight") && !strcmp(theme_name[3], "Paper") && !strcmp(theme_name[4], "Solar"));
 
@@ -1824,7 +1824,7 @@ static void test_check_switch(void)
         line[k] = 0;
         fclose(f);
     }
-    CHECK("...and writes the line", !strcmp(line, "DE 0.6 ok\n"));
+    CHECK("...and writes the line", !strcmp(line, "DE 0.7 ok\n"));
     fflush(stderr);
     quiet = dup(2);
     freopen("/dev/null", "w", stderr);

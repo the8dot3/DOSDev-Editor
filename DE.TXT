@@ -1,9 +1,9 @@
 DE, the DOSDev Editor
 =====================
 
-Version 0.6. DE is a colour editor and IDE for DOS programmers, in the
+Version 0.7. DE is a colour editor and IDE for DOS programmers, in the
 style of the Borland IDEs. It builds and runs your programs, colours
-C, assembly, Pascal and BASIC, and suggests words as you type.
+C, C++, assembly, Pascal and BASIC, and suggests words as you type.
 
 This manual is also inside DE: press F1. In it, Enter opens a topic,
 Left and Right go to the topic before or after, and Esc goes back.
@@ -20,7 +20,7 @@ Start DE with the files to edit:
   DE +12 HELLO.C      A file, at line 12 (HELLO.C +12 works too)
   DE /?               A summary of these
   DE /CHECK FILE      Starts and stops DE without a keyboard, and writes
-                      "DE 0.6 ok" in FILE; for a build to test DE.EXE
+                      "DE 0.7 ok" in FILE; for a build to test DE.EXE
 
 Type, move with the arrow keys, and press F2 to save. F9 builds the
 program, and Ctrl-F9 runs it. Alt-X leaves DE, asking first about any
@@ -45,11 +45,11 @@ The top line is the menu bar. Below it, a window shows the file:
   - The line and column of the cursor are at the bottom left.
 
 The bottom line is the status line. It shows the main keys, and on the
-right the kind of file (C, Asm ...), its line endings (CRLF or LF), and
-INS or OVR. When a suggestion is showing, it says what Tab will type;
-on a line with an error from the last build, what's wrong; inside a
-function's brackets, how the function is written. Messages, such as
-"Saved", appear there too, until the next key.
+right the kind of file (C, C++, Asm ...), its line endings (CRLF or
+LF), and INS or OVR. When a suggestion is showing, it says what Tab
+will type; on a line with an error from the last build, what's wrong;
+inside a function's brackets, how the function is written. Messages,
+such as "Saved", appear there too, until the next key.
 
 Moving around
 -------------
@@ -94,7 +94,7 @@ Editing
   Alt-Up     Move the line, or the selected lines, up.
   Alt-Down   ... or down.
   Alt-;      Comment the line or the selected lines, or uncomment them:
-             // in C and Pascal, ; in assembly and INI files, ' in
+             // in C, C++ and Pascal, ; in assembly and INI files, ' in
              BASIC, REM in batch files, # in Makefiles.
   Tab        Indent to the next stop; with lines selected, indent them.
              In a Makefile (Makefile, *.MAK, *.MK) it types a tab
@@ -105,8 +105,8 @@ Editing
              overwriting.
 
 Enter keeps the line's indentation, and indents one step more after {
-in C or begin in Pascal. A } typed at the start of a line steps back.
-Backspace in the indentation goes back a whole step.
+in C and C++ or begin in Pascal. A } typed at the start of a line steps
+back. Backspace in the indentation goes back a whole step.
 
 Suggestions
 -----------
@@ -145,10 +145,11 @@ The reference
 -------------
 
 DE knows the C library (stdio, stdlib, string, ctype, math and time),
-the DOS functions of DJGPP and Borland C (conio, dos.h, bios.h) and
-DJGPP's own (pc.h, dpmi.h, farptr.h), SDL3 and PDCurses (curses.h),
-the x86 instructions, the DOS and BIOS interrupts (INT 21h, 10h, 16h
-and 33h), Pascal's System and Crt units, and BASIC.
+the everyday C++ library (see C and C++), the DOS functions of DJGPP
+and Borland C (conio, dos.h, bios.h) and DJGPP's own (pc.h, dpmi.h,
+farptr.h), SDL3 and PDCurses (curses.h), the x86 instructions, the DOS
+and BIOS interrupts (INT 21h, 10h, 16h and 33h), Pascal's System and
+Crt units, and BASIC.
 
   Ctrl-F1    The reference for the word at the cursor. A word with no
              entry opens the list, searched for that word: Ctrl-F1 on
@@ -189,9 +190,10 @@ Finding your way around
 
 Symbols are found by the shape of each language's definitions, not by
 compiling: in C, a name and ( at the start of a line that doesn't end
-in ;, and #define, struct and typedef; in assembly, NAME: and proc;
-in Pascal, procedure and function; in BASIC, SUB and FUNCTION; in
-batch files, :LABEL. A name F12 can't find, it looks up in the
+in ;, and #define, struct and typedef; in C++, classes, namespaces and
+functions in class bodies too (see C and C++); in assembly, NAME: and
+proc; in Pascal, procedure and function; in BASIC, SUB and FUNCTION;
+in batch files, :LABEL. A name F12 can't find, it looks up in the
 reference.
 
 Find in files looks through the project's folder and the folders in
@@ -223,14 +225,14 @@ What F9 runs, for the file being edited:
      Ctrl-F9.
   3. The project's BUILD.BAT. Every DOSDev template has one, for
      building in the Workbench.
-  4. Otherwise DE asks, with a command to start from: gcc for C, nasm
-     for assembly, fpc for Pascal.
+  4. Otherwise DE asks, with a command to start from: gcc for C, gpp
+     for C++, nasm for assembly, fpc for Pascal.
 
-DE reads what the build says for errors and warnings, from GCC, NASM,
-Open Watcom, Free Pascal, Turbo C and Borland C++, Turbo Pascal and
-JWasm. A line with an error is marked beside its number, and a
-warning in another colour; on the line, the status line says what's
-wrong. The marks move with their lines as you edit.
+DE reads what the build says for errors and warnings, from GCC and
+g++, NASM, Open Watcom, Free Pascal, Turbo C and Borland C++, Turbo
+Pascal and JWasm. A line with an error is marked beside its number,
+and a warning in another colour; on the line, the status line says
+what's wrong. The marks move with their lines as you edit.
 
 When a build fails, the messages open, and Enter on one goes to it.
 When it works, the status line says so. A project's output is the
@@ -252,6 +254,76 @@ finds is your own code.
 
 If LIBS goes missing, BUILD.BAT says so: make the project again in
 DOSDev, or copy LIBS from another project of the same kind.
+
+C and C++
+---------
+
+DE takes a file as C++ by its name: .CPP, .CXX, .CC, .HPP, .HH and
+.HXX, in any case. A .C file is C. A .H file is C, unless a line in
+its first 4 KB starts, after any spaces, with class, namespace,
+template, or #include < and a name with no dot in it, such as <vector>;
+then it is C++. Lines inside a /* */ comment don't count. A .H is
+looked at again each time it is saved, so a new header you write C++
+in is C++ once you save it. The status line says C or C++.
+
+In C++, DE colours C++17's keywords and the C++20 ones in common use
+(concept, requires, consteval, constinit, co_await, co_return,
+co_yield, char8_t); and, or, not and the other alternative words;
+nullptr, true and false; and the four casts. override and final are
+coloured everywhere, although they are keywords only after a function
+or a class name. import and module are not coloured: in most code they
+are ordinary names. A raw string, R"x( ... )x", is a string until its
+own )x", over as many lines as it takes. 1'000'000, 0b1010, 0x1F,
+1.5e-3, 10_km and "text"s each colour as one number or string. In a .C
+file, C++'s words are not coloured.
+
+Ctrl-L and F12 know C++'s definitions: classes, structs, unions, enums
+(enum class too), namespaces, using NAME = ..., and functions at the
+top, in namespaces and in class bodies. A function in the body of class
+Foo, or written as Foo::bar outside it, is listed as Foo::bar;
+constructors are Foo::Foo, destructors Foo::~Foo, operators
+Foo::operator+. A template is listed by its name: Stack::push for
+Stack<T>::push. F12 on bar finds Foo::bar. From a C++ file F12 looks in
+C files too, and the other way round, and on #include <vector> it opens
+DJGPP's own header, from DJDIR\INCLUDE\CXX.
+
+Suggestions offer C++'s keywords in C++ files, and the words in your
+files as in C. After std:: (or std::chrono::), they are the reference's
+C++ names alone, and Ctrl-Space right after std:: lists them all. After
+a variable and . or ->, nothing special is done: DE doesn't know the
+variable's type, so the suggestions are the usual ones.
+
+The reference has the everyday C++ library: string and string_view,
+vector, array, map, unordered_map, set, pair, tuple, optional,
+unique_ptr, shared_ptr, make_unique, make_shared, cout, cin, cerr and
+endl, the file and string streams, the algorithms (sort, find, find_if,
+for_each, count, copy, reverse, min, max, and accumulate from
+<numeric>), swap and move, <cmath>'s functions for float, double and
+long double, and <chrono>. A member is written with its class, as
+string::find or vector::push_back: Ctrl-F1 on push_back lists it. A
+C++ file has C's library in the reference too. There is no <thread>:
+DOS has no threads.
+
+F9 on a .CPP file with no project offers gpp, DJGPP's g++. DE reads
+g++'s messages as it reads GCC's. After an error in a template, a line
+that ends "required from here" is a note, and F8 goes to it: it is the
+place in your code that used the template.
+
+The limits. Symbols come from the shape of lines, not from compiling:
+
+  - Braces are counted, to know what is inside a function. A macro that
+    opens or closes a brace, or #if branches that each open one, put
+    the count out for the rest of the file.
+  - A macro in a declaration (class EXPORT Foo, or DECLARE(x) with no ;
+    after it) is not understood, or looks like a function.
+  - A function's name and its ( must be on the same line. Its
+    parameters may go on over the next lines.
+  - A specialisation, class Foo<int> { ... }, is not listed.
+  - Names are not written with their namespace.
+
+A raw string's delimiter is remembered by number, for up to 252
+different delimiters while DE runs; after that a new one is taken as
+R"( ... )", and may end too early.
 
 Files and windows
 -----------------
@@ -361,7 +433,7 @@ the time each takes. A key held down repeats every 33 ms; anything
 under that keeps up.
 
 DE /CHECK FILE does not time anything. It sets up the screen as DE
-does at a start, puts it back, writes "DE 0.6 ok" and a line break in
+does at a start, puts it back, writes "DE 0.7 ok" and a line break in
 FILE, and ends with exit code 0. It needs no key. A project that builds
 its own DE.EXE can run it to see that the program starts.
 

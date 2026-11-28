@@ -8,7 +8,7 @@
 #include <stddef.h>
 
 #define DE_NAME    "DOSDev Editor"
-#define DE_VERSION "0.6"
+#define DE_VERSION "0.7"
 #define MAXFILES   16
 #define DE_PATH    260
 #define DE_MAX_FILE (16L * 1024 * 1024)   /* the largest file DE opens: see DE.TXT */
