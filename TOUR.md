@@ -4,9 +4,9 @@ This is a guided reading of DE's source code. It is meant to be read beside
 the source, one chapter at a time. It explains what each part of the program
 does, how it does it, and why it is done that way.
 
-Everything here was checked against the code at commit `eab2dc7`, which is
+Everything here was checked against the code at commit `2874d71`, which is
 DE 0.7, the version that made C++ a language of its own, after the fixes of
-its first review. (The first edition
+its two reviews. (The first edition
 of this tour described DE 0.6, at `5f6fe6a`.) References look like
 `EDITOR.C:1864`: a file in `src/` and a line number. If the code changes later, the line numbers drift, but the
 function names stay useful: search for the name.
@@ -56,18 +56,18 @@ again, in two sentences.
 | `src/DIALOG.C` | 737 | 26 KB | Menus, input boxes, message boxes, the Open dialog, and a general "pick a line from a list" window. |
 | `src/SUGGEST.C` | 642 | 19 KB | Suggestions while typing (the dimmed "ghost"), the Ctrl+Space list, each file's word index, and "which call is the cursor in". |
 | `src/REF.C` | 626 | 71 KB | The built-in reference: 492 one-line entries for C, C++, SDL3, PDCurses, DOS, assembly, Pascal and BASIC, and three functions to look them up. |
-| `src/SYMBOLS.C` | 1,050 | 38 KB | Finding functions, labels and types from the shape of lines (for C++, with the braces counted); Go to symbol (Ctrl+L) and Go to definition (F12). |
-| `src/PROJECT.C` | 1,035 | 32 KB | Projects (`project.ini`, `BUILD.BAT`), building and running, reading compiler messages, the Messages window, Find in files. |
+| `src/SYMBOLS.C` | 1,094 | 40 KB | Finding functions, labels and types from the shape of lines (for C++, with the braces counted); Go to symbol (Ctrl+L) and Go to definition (F12). |
+| `src/PROJECT.C` | 1,046 | 32 KB | Projects (`project.ini`, `BUILD.BAT`), building and running, reading compiler messages, the Messages window, Find in files. |
 | `src/HELP.C` | 289 | 10 KB | The manual viewer (F1), the reference list (Shift+F1) and one reference entry (Ctrl+F1). |
-| `src/MANUAL.H` | 516 | 26 KB | `DE.TXT` turned into a C array of strings by `make`. It is generated: change `DE.TXT`, not this file. |
+| `src/MANUAL.H` | 523 | 27 KB | `DE.TXT` turned into a C array of strings by `make`. It is generated: change `DE.TXT`, not this file. |
 
-The source is about 9,890 lines; 9,375 without `MANUAL.H`.
+The source is about 9,950 lines; 9,430 without `MANUAL.H`.
 
 Around the source:
 
 | File | What it is |
 |------|------------|
-| `test/DETEST.C` (2,023 lines) | The tests: scripted keys played into the real editor code, on Linux. |
+| `test/DETEST.C` (2,124 lines) | The tests: scripted keys played into the real editor code, on Linux. |
 | `test/HOSTPLAT.C` (119 lines) | A stand-in for `DOS.C` that the tests use: keys come from a script, the screen goes into an array. |
 | `test/run.sh` (12 lines) | Compiles and runs the tests (`make test`). |
 | `test/gpp93-real.txt` | What DJGPP's g++ 9.3 printed, inside DOS, for a C++ file with errors: test data for reading messages. |
@@ -926,7 +926,7 @@ there are two lines again. The second undoes `ch[1]`: delete (0,2)-(1,0),
 back to `"ab"`. The third undoes `ch[0]`: delete (0,0)-(0,2), back to `""`.
 `upos` is 0. Ctrl+Y three times plays them forward.
 
-The random-edit test (`random_rounds`, `test/DETEST.C:1458`) checks exactly
+The random-edit test (`random_rounds`, `test/DETEST.C:1559`) checks exactly
 this property: after 600 random keys, undoing everything gives back the
 empty file, and redoing everything gives back the same text.
 
@@ -1491,8 +1491,8 @@ typedef struct {
 `count`, `item` and `info` are *function pointers*: variables that hold a
 function. `pick_run` calls `p->count(filter)` to know how many lines there
 are and `p->item(i, ...)` to get line `i`, without knowing whether they are
-messages or symbols. `msgs_list` (`PROJECT.C:858`) and `sym_list`
-(`SYMBOLS.C:762`) each fill in a `Pick` with their own functions.
+messages or symbols. `msgs_list` (`PROJECT.C:869`) and `sym_list`
+(`SYMBOLS.C:806`) each fill in a `Pick` with their own functions.
 
 ### 8.3 Suggestions and the built-in reference
 
@@ -1574,7 +1574,7 @@ the word at the cursor, or the list searched for that word.
 
 **The problem.** Jump to a function or label by name, without a compiler.
 
-**How.** `sym_scan` (`SYMBOLS.C:632`) reads a file line by line. It colours
+**How.** `sym_scan` (`SYMBOLS.C:674`) reads a file line by line. It colours
 each line first (`syn_line`, with the state carried along as in chapter 6),
 so it can skip comments and strings. Then it applies the shape rules of the
 language, which the comment at the top of `SYMBOLS.C` lists. For C,
@@ -1590,17 +1590,17 @@ C++ needs more, because its definitions are indented inside namespaces and
 class bodies, and a method's name depends on the class it is in. For C++,
 `sym_scan` keeps a `CppScope` (`SYMBOLS.C:169`) from line to line: how many
 braces are open, and which of them opened a namespace, a class or an
-`extern "C"` block. `cpp_braces` (`SYMBOLS.C:481`) counts the braces of
+`extern "C"` block. `cpp_braces` (`SYMBOLS.C:515`) counts the braces of
 each line (only those coloured `A_SYMBOL`, so not in comments or strings,
 and not on `#` lines). A line is looked at only where a declaration can be:
 when the braces open are exactly those of the scopes, so never inside a
-function body. There `cpp_decl` (`SYMBOLS.C:387`) takes classes, structs,
+function body. There `cpp_decl` (`SYMBOLS.C:388`) takes classes, structs,
 unions, enums, namespaces and `using NAME =`, and hands the rest to
-`cpp_function` (`SYMBOLS.C:298`). That finds the name before the `(` (or an
+`cpp_function` (`SYMBOLS.C:299`). That finds the name before the `(` (or an
 `operator...`), walks back over `Foo<T>::` and `~`, and asks `has_body`
-(`SYMBOLS.C:227`) whether the `)` is followed by `{` before any `;` or `=`,
+(`SYMBOLS.C:228`) whether the `)` is followed by `{` before any `;` or `=`,
 looking up to eight lines on, so a parameter list may be split. The name
-gets the class it is in in front (`add_scoped`, `SYMBOLS.C:202`): `bar`
+gets the class it is in in front (`add_scoped`, `SYMBOLS.C:203`): `bar`
 in the body of `Foo` and `ns::Foo::bar` outside it are both `Foo::bar`.
 Only the innermost class is written, and no namespace, in one bounded
 `snprintf` into a buffer the size of `Sym`'s name. (The first 0.7 build
@@ -1609,31 +1609,37 @@ names inside each other then ran past the end of its buffer.)
 
 Two things would otherwise give false symbols. A constructor's member
 initialisers, `: x_(x), y_(2)`, look like calls on lines of their own, so
-`after_params` (`SYMBOLS.C:267`) follows a definition's parameters to their
+`after_params` (`SYMBOLS.C:268`) follows a definition's parameters to their
 `)`, and from a `:` after it the scanner skips lines (`CppScope.init`)
 until the body's `{` or a `;`; a declaration-level line that starts with
-`:` or `,` does the same. And `#if`/`#else` branches that each open a
-brace would leave one brace too many: `cpp_braces` keeps the count and the
-scopes at each `#if`, and starts each `#else` or `#elif` branch from them.
+`:` or `,` does the same. In the list, a `{` right after a name or a `>`
+is a member's own initialiser (`a_{1}`), not the body. And the
+preprocessor: `#if`/`#else` branches that each open a brace would leave
+one brace too many, so `cpp_braces` keeps the count and the scopes at each
+`#if`, and starts each `#else` or `#elif` branch from them; what is
+between `#if 0` and its `#endif` or `#else` is passed over whole
+(`cpp_if0`, `SYMBOLS.C:484`), as it may be half a function. A `#` counts
+as a directive only when it is coloured as one, so a `#ifdef` inside a
+block comment is not.
 
 Each symbol gets a kind letter: `f` function, `d` define, `t` type, `l`
 label, `v` data, `s` section, `n` namespace.
 
-**Ctrl+L** (`sym_list`, `SYMBOLS.C:762`) shows the symbols in a `Pick`
+**Ctrl+L** (`sym_list`, `SYMBOLS.C:806`) shows the symbols in a `Pick`
 list. Typing filters it.
 
-**F12** (`sym_definition`, `SYMBOLS.C:994`):
+**F12** (`sym_definition`, `SYMBOLS.C:1038`):
 
 1. On an `#include` line (or `%include`, or Pascal's `{$I ...}`), open that
-   file. `find_include` (`SYMBOLS.C:898`) looks in the file's folder, the
+   file. `find_include` (`SYMBOLS.C:942`) looks in the file's folder, the
    project's folder, each `LIBS/NAME/INCLUDE`, the folders on `INCLUDE`,
    and `DJDIR/include`, in that order; for C++ also each folder in
    `DJDIR/include/cxx`, where DJGPP keeps `<vector>` and the rest.
 2. Otherwise, look for definitions of the word at the cursor in this file,
    in the other open files of the same language (C and C++ count as one),
-   then in the project's files on disk (`defs_walk`, `SYMBOLS.C:844`: up to
+   then in the project's files on disk (`defs_walk`, `SYMBOLS.C:888`: up to
    3 folders deep, 1,000 files, files under 1 MB). A C++ name matches by
-   its last part too (`last_part`, `SYMBOLS.C:746`): `bar` finds
+   its last part too (`last_part`, `SYMBOLS.C:790`): `bar` finds
    `Foo::bar`.
 3. One found: go there. Several: a list. None: show the reference entry, if
    there is one.
@@ -1713,20 +1719,23 @@ a line such as `make: *** ...` is not taken for a place. A drive letter's
 colon (`C:\`) is skipped first. A line that says where nothing is, but has
 `error:` or `undefined reference` in it, still counts as an error. Every
 message that says where is shown the same way, whichever compiler said it:
-`FILE(LINE): text` (`PROJECT.C:760`).
+`FILE(LINE): text` (`PROJECT.C:766`).
 
 **The messages.** They are kept in a fixed array, `msgs[2000]`
 (`PROJECT.C:622`). Each `Msg` (`DE.H:219-225`) points at the open buffer
 it belongs to, if the file is open. The line number moves with the text:
 when lines are inserted or deleted, `BUFFER.C` calls `msgs_shift`
-(`PROJECT.C:699`). `msgs_marks` gives `ed_paint` the worst message on each
+(`PROJECT.C:700`). `msgs_marks` gives `ed_paint` the worst message on each
 visible line, for the error and warning colours in the gutter.
 
-F8 and Shift+F8 (`msgs_next`, `PROJECT.C:820`) go round the messages that
-say where, except notes about files outside the project's folder
-(`f8_stops_at`, `PROJECT.C:815`): g++'s "candidate" notes in a library
+F8 and Shift+F8 (`msgs_next`, `PROJECT.C:831`) go round the messages that
+say where, except notes about files outside the project
+(`f8_stops_at`, `PROJECT.C:826`): g++'s "candidate" notes in a library
 header would open that header for editing. They stay in the F7 list. The
-round goes with modular arithmetic:
+project is the folder with `project.ini` and the folders in it; with no
+`project.ini`, the build ran in the file's own folder, which may be a
+drive's root, so only the files directly in it count. The round goes with
+modular arithmetic:
 
 ```
  i = (start + dir * k + 2 * nmsgs) % nmsgs        k = 1, 2, ... nmsgs
@@ -1735,7 +1744,7 @@ round goes with modular arithmetic:
 Adding `2 * nmsgs` keeps the number positive before `%`, because in C the
 remainder of a negative number is negative.
 
-**Find in files** (`find_in_files`, `PROJECT.C:1008`) walks the project's
+**Find in files** (`find_in_files`, `PROJECT.C:1019`) walks the project's
 folders (4 deep, leaving `LIBS` out), reads each text file, and adds each
 match as a message of kind `M_FOUND`. For a file that is open, it searches
 the buffer instead, so unsaved changes are found too. Lower case finds any
@@ -1840,7 +1849,7 @@ with Left and Right for the topic before and after.
 **Why.** The manual is compiled into the program, so `DE.EXE` alone is
 complete. Writing the manual as plain text with underlined headings keeps it
 readable as a file too, and the same convention lets Ctrl+L list a text
-file's headings (`sym_scan`, `SYMBOLS.C:685-687`).
+file's headings (`sym_scan`, `SYMBOLS.C:729-731`).
 
 ### 8.8 When memory runs out
 
@@ -1887,7 +1896,7 @@ itself, and the `shown` copy of the screen in `take_screen`, without which
 **Prevention.** `buf_load` refuses a file over 16 MB (`DE_MAX_FILE`) before
 reading it, and leaves everything as it was.
 
-**The test.** `test_big_and_memory` (`DETEST.C:1850`) runs the editor in a
+**The test.** `test_big_and_memory` (`DETEST.C:1951`) runs the editor in a
 child process (`fork`), sets `de_fail_alloc = 1` so the next `xrealloc`
 fails, and then checks the exit code and every `.SAV` file.
 
@@ -1912,7 +1921,7 @@ fails, and then checks the exit code and every `.SAV` file.
    (`gpp93-real.txt`).
 
 The program prints each group's name, any failures, and a count at the end
-(351 checks at `eab2dc7`, all passing; DE 0.6 had 253).
+(357 checks at `2874d71`, all passing; DE 0.6 had 253).
 
 ### How a test drives the editor
 
@@ -2000,11 +2009,11 @@ against the text itself, most by working it out again from scratch:
 - `ed_paint_check` (`EDITOR.C:1838`): the screen drawn with the row cache is
   the same as without it.
 
-`test_random` (`DETEST.C:1538`) plays 40 rounds of 600 random keys from a
+`test_random` (`DETEST.C:1639`) plays 40 rounds of 600 random keys from a
 pool on a C file, then 20 rounds on a C++ file with raw strings and comments
 over lines, and 20 on a Pascal file with both of its comments; the C++ and
 Pascal rounds add keys of their own to the pool (`R`, `"`, `(` and `)`;
-`{`, `}`, `(*` and `*)`). `random_rounds` (`DETEST.C:1458`) does the work.
+`{`, `}`, `(*` and `*)`). `random_rounds` (`DETEST.C:1559`) does the work.
 After each key it runs `buf_check`, `words_check` and `buf_state_check`
 (and `ed_paint_check` after every third key); at the end of a round it
 undoes everything and redoes everything. A fixed seed (`srand(1234)`) makes
@@ -2026,7 +2035,7 @@ it repeatable, and the C rounds are the same keys as before 0.7.
    }
    ```
 
-2. Call it from `main` (`DETEST.C:1980`), before `test_random()`.
+2. Call it from `main` (`DETEST.C:2081`), before `test_random()`.
 3. Run `make test`. Write the check first and see it fail, then change the
    code and see it pass: then you know the test really tests the change.
 
@@ -2217,7 +2226,7 @@ has no state yet (`syn_basic` takes none).
   `syn_line`. The state is stored in one `unsigned char` per line, so there
   is room for 256 states, and C++'s raw strings use most of them.
 - **Harder still:** the random test edits a C, a C++ and a Pascal file. Add
-  a call to `random_rounds` in `test_random` (`DETEST.C:1538`) for a `.BAS`
+  a call to `random_rounds` in `test_random` (`DETEST.C:1639`) for a `.BAS`
   file that starts with a `/' ... '/` comment over two lines, with `/` and
   `'` among its extra keys, so `buf_state_check` covers the new state.
 
@@ -2366,7 +2375,7 @@ The first edition of this tour listed these, and DE 0.7 changed them:
 - **Keep mine after a run** now takes the file's size as well as its time
   (`buf_disk_seen`, `BUFFER.C:434`, called at `EDITOR.C:449`), so DE does
   not ask again about a change that also changed the size. The test runs a
-  program that writes a file of another size (`DETEST.C:1805`).
+  program that writes a file of another size (`DETEST.C:1906`).
 - **The first line's syntax state** is written every time (chapter 6).
 - **Out-of-date comments** in `SCREEN.C`, `DIALOG.C` and above `newest` in
   `PROJECT.C` now say what is true.
@@ -2472,13 +2481,13 @@ a toolkit DE shares with other programs:
   saved, from its first 4 KB, not as you type.
 - **C++ symbols are a guess too.** `cpp_scan`'s brace count is put out for
   the rest of the file by a macro that opens or closes a brace (`#if`
-  branches that each open one are handled). A macro in a declaration (`class EXPORT Foo`,
+  branches that each open one, and `#if 0` blocks, are handled). A macro in a declaration (`class EXPORT Foo`,
   `DECLARE(x)` with no `;` after it) is missed or taken for a function. A
   function's name must be on the line with its `(`. A specialisation,
   `class Foo<int> {`, is not listed, and names carry only their innermost
   class. The manual's C and C++ topic says the same for the user.
 - **Messages and inserted lines.** `msgs_shift` moves messages on lines
-  *after* the changed line (`PROJECT.C:705`). A message on the very line
+  *after* the changed line (`PROJECT.C:706`). A message on the very line
   where Enter is pressed stays on that line, even if its text moved down.
 - **Running out of memory inside a multi-line insert.** `raw_insert` opens
   the gap in the line array (`BUFFER.C:188-189`) before it fills the new
@@ -2491,7 +2500,7 @@ a toolkit DE shares with other programs:
 - **Comparing pointers that may be `NULL`.** Several places find the last
   `/` or `\` in a path and pick the later one with a test such as
   `if (sep2 > sep)` (`BUFFER.C:613`, `BUFFER.C:728`, `SYNTAX.C:40`, `PROJECT.C:43`,
-  `SYMBOLS.C:909`), where either may be `NULL`. Standard C only defines `<`
+  `SYMBOLS.C:953`), where either may be `NULL`. Standard C only defines `<`
   and `>` between pointers into the same array, so this is technically
   undefined behaviour. It works with GCC on a flat address space, which is
   all DE runs on.
@@ -2500,7 +2509,7 @@ a toolkit DE shares with other programs:
 - **What the tests do not cover.** `DOS.C` is only type-checked, so key
   translation, the mouse, the palette and running programs are tested only
   by using DE. The tests write their options file to a fixed path,
-  `/tmp/DE-test.CFG` (`DETEST.C:1986`), and `run.sh` uses `set -e`, so a
+  `/tmp/DE-test.CFG` (`DETEST.C:2087`), and `run.sh` uses `set -e`, so a
   failing run leaves its temporary folder behind.
 - **`MANUAL.H` must follow `DE.TXT`.** Building with `BUILD.BAT` uses the
   `src/MANUAL.H` that is in the folder. If `DE.TXT` was edited and `make` was
