@@ -1217,6 +1217,30 @@ static void test_cpp_symbols(void)
     CHECK("classes inside classes with long names: the innermost class and the name, within bounds",
           has_sym(s, n, "Inner::method", 3, 'f'));
     n = scan(L_CPP,
+        "Foo::Foo() : a_{1},\n"
+        "    b_(2)\n"
+        "{\n"
+        "}\n"
+        "Bar::Bar()\n"
+        "    : a_(1),\n"
+        "      b_{2},\n"
+        "      c_(3)\n"
+        "{\n"
+        "}\n"
+        "class K {\n"
+        "    K() : a_{}, b_(0),\n"
+        "          c_(1)\n"
+        "    {}\n"
+        "};\n", s);
+    CHECK("initialiser lists with members in braces, a_{1}: still no symbols from the list",
+          has_sym(s, n, "Foo::Foo", 0, 'f') && has_sym(s, n, "Bar::Bar", 4, 'f') && has_sym(s, n, "K", 10, 't')
+          && has_sym(s, n, "K::K", 11, 'f') && n == 4);
+    if (n != 4) {
+        int q;
+        for (q = 0; q < n; q++)
+            printf("        %c %d %s\n", s[q].kind, s[q].line, s[q].name);
+    }
+    n = scan(L_CPP,
         "#ifdef BIG\n"
         "long f(long a) {\n"
         "#else\n"

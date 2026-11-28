@@ -277,7 +277,7 @@ static void after_params(CppScope *c, const char *s, int n, const unsigned char 
     }
     for (i++; i < n && !c->paren; i++)
         if (role[i] == A_TEXT && s[i] == ':' && (i + 1 >= n || s[i + 1] != ':') && (i == 0 || s[i - 1] != ':')) {
-            c->init = !memchr(s + i, '{', n - i);
+            c->init = 1;                    /* until the body's {: cpp_braces */
             return;
         }
 }
@@ -504,6 +504,13 @@ static void cpp_braces(CppScope *c, const char *s, int n, const unsigned char *r
         if (role[i] != A_SYMBOL)
             continue;
         if (s[i] == '{') {
+            int p = i;
+            while (p > 0 && (s[p - 1] == ' ' || s[p - 1] == '\t'))
+                p--;
+            if (c->init && p > 0 && (is_id(s[p - 1]) || s[p - 1] == '>')) {
+                c->depth++;                 /* a_{1} or b_<int>{}: a member's initialiser, not the body */
+                continue;
+            }
             c->depth++;
             if (c->pend && c->nsc < SCOPES) {
                 snprintf(c->sc[c->nsc].name, sizeof c->sc[0].name, "%s", c->pending);
