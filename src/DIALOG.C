@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #include "DE.H"
 
@@ -428,27 +427,6 @@ static int entry_cmp(const void *a, const void *b)
     return tolower((unsigned char)*p) - tolower((unsigned char)*q);
 }
 
-/* dir and name as one path, cut off where DE_PATH ends. */
-static void join(const char *dir, const char *name, char *out)
-{
-    size_t n = strlen(dir), m = strlen(name);
-    if (n > DE_PATH - 1)
-        n = DE_PATH - 1;
-    memcpy(out, dir, n);
-    if (n < DE_PATH - 1 && (!n || (dir[n - 1] != '/' && dir[n - 1] != '\\')))
-        out[n++] = '/';
-    if (m > DE_PATH - 1 - n)
-        m = DE_PATH - 1 - n;
-    memcpy(out + n, name, m);
-    out[n + m] = 0;
-}
-
-static int is_dir(const char *p)
-{
-    struct stat st;
-    return stat(p, &st) == 0 && S_ISDIR(st.st_mode);
-}
-
 static int list_dir(const char *dir, Entry **out)
 {
     DIR *d = opendir(dir);
@@ -467,7 +445,7 @@ static int list_dir(const char *dir, Entry **out)
                 v = xrealloc(v, cap * sizeof *v);
             }
             strcpy(v[n].name, e->d_name);
-            join(dir, e->d_name, full);
+            path_join(dir, e->d_name, full);
             v[n].dir = !strcmp(e->d_name, "..") || is_dir(full);
             n++;
         }
@@ -582,7 +560,7 @@ int open_box(char *path)
                 if (abs)
                     strcpy(t, name);
                 else
-                    join(dir, name, t);
+                    path_join(dir, name, t);
                 if (is_dir(t)) {
                     strcpy(dir, t);
                     name[0] = 0;
@@ -602,7 +580,7 @@ int open_box(char *path)
                 if (!strcmp(e[sel].name, ".."))
                     parent(dir);
                 else {
-                    join(dir, e[sel].name, t);
+                    path_join(dir, e[sel].name, t);
                     strcpy(dir, t);
                 }
                 free(e);
@@ -610,7 +588,7 @@ int open_box(char *path)
                 sel = top = 0;
                 continue;
             }
-            join(dir, e[sel].name, path);
+            path_join(dir, e[sel].name, path);
             free(e);
             return 1;
         }

@@ -24,7 +24,9 @@ static int absolute(const char *p)
     return p[0] == '/' || p[0] == '\\' || (isalpha((unsigned char)p[0]) && p[1] == ':');
 }
 
-static void join(const char *dir, const char *name, char *out)
+/* dir and name as one path, DE_PATH long. A name that is already absolute
+ * is the path as it is. The Open dialog uses this too. */
+void path_join(const char *dir, const char *name, char *out)
 {
     size_t n;
     if (absolute(name) || !dir[0]) {
@@ -57,7 +59,7 @@ static long mtime_of(const char *path)
     return stat(path, &st) ? -1 : (long)st.st_mtime;
 }
 
-static int is_dir(const char *path)
+int is_dir(const char *path)
 {
     struct stat st;
     return !stat(path, &st) && S_ISDIR(st.st_mode);
@@ -129,12 +131,12 @@ static int find_ini(const char *start, char *dir, char *ini)
     char d[DE_PATH], up[DE_PATH];
     snprintf(d, sizeof d, "%s", start);
     for (;;) {
-        join(d, "project.ini", ini);
+        path_join(d, "project.ini", ini);
         if (mtime_of(ini) >= 0) {
             snprintf(dir, DE_PATH, "%s", d);
             return 1;
         }
-        join(d, "PROJECT.INI", ini);
+        path_join(d, "PROJECT.INI", ini);
         if (mtime_of(ini) >= 0) {
             snprintf(dir, DE_PATH, "%s", d);
             return 1;
@@ -168,7 +170,7 @@ void proj_find(Buffer *b, Project *p)
             p->run_from = "project.ini";
         }
     }
-    join(p->dir, "BUILD.BAT", t);
+    path_join(p->dir, "BUILD.BAT", t);
     if (!p->build[0] && mtime_of(t) >= 0) {
         snprintf(p->build, sizeof p->build, "BUILD.BAT");
         p->build_from = "BUILD.BAT";
@@ -270,7 +272,7 @@ static long newest(const char *dir, int depth, long best)
         long t;
         if (e->d_name[0] == '.')
             continue;
-        join(dir, e->d_name, p);
+        path_join(dir, e->d_name, p);
         if (is_dir(p)) {
             if (depth < 3)
                 best = newest(p, depth + 1, best);
@@ -292,7 +294,7 @@ static int up_to_date(const Project *p)
     long t;
     if (!p->output[0])
         return 0;
-    join(p->dir, p->output, out);
+    path_join(p->dir, p->output, out);
     if ((t = mtime_of(out)) < 0)
         return 0;
     return newest(p->dir, 0, -1) <= t;
@@ -304,7 +306,7 @@ static void log_path(const Project *p, char *out)
     const char *tmp = getenv("TMP");
     if (!tmp || !*tmp)
         tmp = getenv("TEMP");
-    join(tmp && *tmp ? tmp : p->dir, "DEBUILD.TMP", out);
+    path_join(tmp && *tmp ? tmp : p->dir, "DEBUILD.TMP", out);
 }
 
 static void first_word(const char *cmd, char *out, int size)
@@ -403,13 +405,13 @@ void proj_build(int then_run)
     msgs_set("Build", p.dir, log);
     remove(log);
     /* Free Pascal writes its errors to BUILD.LOG itself (-Fe) */
-    join(p.dir, "BUILD.LOG", other);
+    path_join(p.dir, "BUILD.LOG", other);
     if (mtime_of(other) >= start - 2)
         msgs_set(NULL, p.dir, other);
     errors = msgs_count(M_ERROR);
     warnings = msgs_count(M_WARNING);
     if (p.output[0]) {
-        join(p.dir, p.output, t);
+        path_join(p.dir, p.output, t);
         made = mtime_of(t) >= start - 2;
     } else
         made = st == 0;
@@ -742,7 +744,7 @@ void msgs_set(const char *t, const char *dir, const char *log)
             char shown[600];
             /* said the same way, whichever compiler said it: FILE(LINE): what */
             snprintf(shown, sizeof shown, "%s(%d): %s", base_name(file), lno, text);
-            join(dir, file, full);
+            path_join(dir, file, full);
             plat_fullpath(full, file);
             msgs_add(shown, file, lno - 1, col, kind);
         } else
@@ -950,7 +952,7 @@ static void walk(const char *dir, const char *shown, int depth)
     while ((e = readdir(d)) != NULL && nfound < MAXMSGS && scanned < 4000) {
         if (e->d_name[0] == '.')
             continue;
-        join(dir, e->d_name, p);
+        path_join(dir, e->d_name, p);
         if (shown[0])
             snprintf(s, sizeof s, "%s/%s", shown, e->d_name);
         else

@@ -225,6 +225,8 @@ typedef struct {
     const char *build_from, *run_from;  /* where each came from, said in Commands */
 } Project;
 void proj_find(Buffer *b, Project *p);
+void path_join(const char *dir, const char *name, char *out);   /* dir/name; an absolute name as it is */
+int  is_dir(const char *path);
 void proj_build(int then_run);         /* F9; Ctrl+F9 builds if needed, then runs (2: debugs) */
 void proj_debug(void);                 /* Project > Debug: builds if needed, then debugs */
 void proj_commands(void);              /* Project > Commands */
