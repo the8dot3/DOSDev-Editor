@@ -623,6 +623,7 @@ static Msg msgs[MAXMSGS];
 static int nmsgs, curmsg = -1, dropped;
 static char title[100];
 static char msgdir[DE_PATH];       /* the project the build ran in: F8 keeps to it */
+static int msgdeep;                /* ... and the folders in it: it has a project.ini */
 
 void msgs_clear(const char *t)
 {
@@ -743,8 +744,13 @@ void msgs_set(const char *t, const char *dir, const char *log)
     FILE *f = fopen(log, "r");
     char line[512], file[DE_PATH], full[DE_PATH];
     if (t) {
+        char ini[DE_PATH];
         msgs_clear(t);
         plat_fullpath(dir, msgdir);
+        path_join(msgdir, "project.ini", ini);
+        msgdeep = mtime_of(ini) >= 0;
+        path_join(msgdir, "PROJECT.INI", ini);
+        msgdeep = msgdeep || mtime_of(ini) >= 0;
     }
     if (!f)
         return;
@@ -792,8 +798,8 @@ static void go_to(int i)
     }
 }
 
-/* Is the path in the folder dir, or a folder in it? Any case, / or \. */
-static int in_folder(const char *path, const char *dir)
+/* Is the path in the folder dir (deep: or a folder in it)? Any case, / or \. */
+static int in_folder(const char *path, const char *dir, int deep)
 {
     size_t n = strlen(dir), i;
     while (n > 0 && (dir[n - 1] == '/' || dir[n - 1] == '\\'))
@@ -805,16 +811,21 @@ static int in_folder(const char *path, const char *dir)
         if (a != b)
             return 0;
     }
-    return path[n] == '/' || path[n] == '\\';
+    if (path[n] != '/' && path[n] != '\\')
+        return 0;
+    return deep || (!strchr(path + n + 1, '/') && !strchr(path + n + 1, '\\'));
 }
 
 /* F8 and Shift+F8 go to the messages that say where, except notes about
  * files outside the project: a note in a library's header (g++'s
  * "candidate: ..." in stl_vector.h) would open that header for editing.
- * Those stay in the F7 list, where Enter still goes to them. */
+ * Those stay in the F7 list, where Enter still goes to them. The project
+ * is its folder and the folders in it when it has a project.ini; with
+ * none, the build ran in the file's own folder, which may be a drive's
+ * root, so only the files directly in it count. */
 static int f8_stops_at(const Msg *m)
 {
-    return m->path && !(m->kind == M_NOTE && msgdir[0] && !in_folder(m->path, msgdir));
+    return m->path && !(m->kind == M_NOTE && msgdir[0] && !in_folder(m->path, msgdir, msgdeep));
 }
 
 void msgs_next(int dir)

@@ -1478,6 +1478,27 @@ static void test_cpp_build(void)
         CHECK("...and Enter still goes to one: F8 then goes on from it, to BAD.CPP 7:17", strstr(files[cur]->path, "BAD.CPP")
               && files[cur]->cy == 6 && files[cur]->cx == 16);
     }
+    /* No project.ini: only notes about files in the file's own folder are
+     * F8's, not those in the folders below it (which may be a drive's root
+     * and everything on it). */
+    mkdir(path("NOPRJ"), 0777);
+    mkdir(path("NOPRJ/SUB"), 0777);
+    write_file("NOPRJ/OUT.TXT", "MAIN.CPP:2:1: error: one\nSUB/LIB.H:1:1: note: in a header below\nMAIN.CPP:3:1: note: here\n", -1);
+    write_file("NOPRJ/MAIN.CPP", "int a;\nint b;\nint c;\n", -1);
+    write_file("NOPRJ/SUB/LIB.H", "int lib;\n", -1);
+    fresh();
+    ed_open(path("NOPRJ/MAIN.CPP"), 0);
+    keys(2, KM_ALT | 'P', 'c');
+    type("cat OUT.TXT\n\n");
+    keys(3, DK_F9, DK_ESC, DK_F8);
+    run();
+    {
+        int y1 = files[cur]->cy;
+        keys(1, DK_F8);
+        run();
+        CHECK("no project.ini: F8 skips a note in a folder below the file's", y1 == 1 && files[cur]->cy == 2 && nfiles == 1
+              && msgs_count(M_NOTE) == 2);
+    }
     mkdir(path("LOOSE"), 0777);
     write_file("LOOSE/HELLO.CPP", "int main() { return 0; }\n", -1);
     fresh();
