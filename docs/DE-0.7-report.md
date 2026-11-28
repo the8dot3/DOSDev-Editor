@@ -323,11 +323,15 @@ Most of the text growth is the 119 reference entries (REF.C grew from
 ## Fix round 1
 
 The findings are in `docs/DE-0.7-findings-1.md` (commit `b7d5c72`). Every
-item is fixed, test first: each new check was run against the code before
-its fix, and failed (item 1 aborted the test program under the address
-sanitizer, which reproduced the overflow). The one exception is item 11:
-it is a regression test for a fix already made (`99203fa`), so it passed
-from the start.
+item is fixed, test first. All the new tests were written, then run
+against the unfixed code: the program aborted under the address sanitizer
+in `add_scoped` (item 1 reproduced). With item 1 fixed (which, by writing
+only the innermost class and the name, also did item 8), the next run
+failed the checks for items 2, 3, 5, 6, 7, 9 and 10; then each was fixed.
+Three checks passed before their own fix: item 11's, a regression test for
+a fix already made (`99203fa`); item 8's, done by the item 1 fix; and the
+item 2 check that the constructors are listed (the check that nothing else
+is listed, `n == 23`, is the one that failed).
 
 Commits: `eab2dc7` (the code, the tests, DE.TXT, MANUAL.H, CHANGELOG),
 `990f00a` (TOUR.md), and the commit that adds this section.
